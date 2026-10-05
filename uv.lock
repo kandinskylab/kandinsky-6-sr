@@ -731,7 +731,6 @@ magi = [
     { name = "cuda-python", marker = "sys_platform == 'linux'" },
     { name = "depyf", marker = "sys_platform == 'linux'" },
     { name = "graphviz", marker = "sys_platform == 'linux'" },
-    { name = "magi-compiler", marker = "sys_platform == 'linux'" },
     { name = "pydantic-settings", marker = "sys_platform == 'linux'" },
     { name = "seaborn", marker = "sys_platform == 'linux'" },
 ]
@@ -742,6 +741,9 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+]
+magi = [
+    { name = "magi-compiler", marker = "sys_platform == 'linux'" },
 ]
 
 [package.metadata]
@@ -756,7 +758,6 @@ requires-dist = [
     { name = "graphviz", marker = "sys_platform == 'linux' and extra == 'magi'" },
     { name = "huggingface-hub", specifier = ">=1.0.0" },
     { name = "loguru", specifier = ">=0.7.3" },
-    { name = "magi-compiler", marker = "sys_platform == 'linux' and extra == 'magi'", git = "https://github.com/SandAI-org/MagiCompiler.git?tag=v1.1.0" },
     { name = "numpy", specifier = ">=2.0.0" },
     { name = "omegaconf", specifier = ">=2.3.0" },
     { name = "pydantic", specifier = ">=2.11.0" },
@@ -777,6 +778,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "ruff", specifier = ">=0.15.22" },
 ]
+magi = [{ name = "magi-compiler", marker = "sys_platform == 'linux'", git = "https://github.com/SandAI-org/MagiCompiler.git?tag=v1.1.0" }]
 
 [[package]]
 name = "kiwisolver"

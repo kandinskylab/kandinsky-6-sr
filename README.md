@@ -22,15 +22,35 @@ Tiled video super-resolution for the **Kandinsky 6.0 Video** pipeline: **KVAE en
 
 ### 1. Install
 
+Install the base package from PyPI (MagiCompiler is not required; the default backend is `torch`):
+
+```bash
+pip install kandinsky-6-sr
+```
+
+Alternatively, install from GitHub (repository access required while it is private):
+
 ```bash
 pip install "kandinsky-6-sr @ git+https://github.com/kandinskylab/kandinsky-6-sr"
 ```
 
-With the MagiCompiler KVAE backend (`vae_backend: magi`):
+With the MagiCompiler KVAE backend (`vae_backend: magi`, Linux with NVIDIA CUDA):
+
+The `[magi]` extra installs the supporting dependencies. MagiCompiler itself is
+not available on PyPI and must be installed separately from its `v1.1.0` Git tag
+(the older `v1.0.0` is not compatible):
 
 ```bash
-pip install "kandinsky-6-sr[magi] @ git+https://github.com/kandinskylab/kandinsky-6-sr"
+pip install "kandinsky-6-sr[magi]"
+pip install "setuptools>=61.0" wheel versioningit
+pip install --no-build-isolation "magi_compiler @ git+https://github.com/SandAI-org/MagiCompiler.git@v1.1.0"
 ```
+
+Install the system Graphviz executable as well (Ubuntu/Debian: `sudo apt install graphviz`).
+In a checkout, `just setup-magi` installs both the extra and MagiCompiler.
+For a locally built wheel, replace the first command with
+`pip install "./dist/kandinsky_6_sr-1.0.0-py3-none-any.whl[magi]"`.
+Select `vae_backend: magi` in the config to enable it.
 
 ### 2. Setup config
 
@@ -101,7 +121,7 @@ Schema: `src/kandinsky_sr/pipeline/config.py::SRConfig`. The same section works 
 | `latent_upscaler_config` | the bundle's `latent_upscaler/` | Latent upscalers (x2 and x4). Unset = the bank of the `checkpoint_path` bundle. Otherwise a bundle (repo id or local dir), its component (`<repo>/latent_upscaler` or a local `latent_upscaler/` dir), or a native LU bank YAML (architectures + checkpoints; relative `checkpoint:` entries resolve against the YAML's directory) or the directory holding it. `"none"` disables the LU (pixel path). Required with a native DiT checkpoint. |
 | `resolution_scale` | `2.25` | Total upscale factor: `2`, `4`, or `2.25` (x1.125 pixel pre-upscale + x2 tiling). |
 | `num_steps` | `5` | Denoising grid points per tile (N points = N−1 steps). Ignored by π-Flow-distilled checkpoints (they run at the trained nfe). |
-| `vae_backend` | `torch` | KVAE compilation backend: `torch` (torch.compile) or `magi` (MagiCompiler, needs the `magi` extra). |
+| `vae_backend` | `torch` | KVAE compilation backend: `torch` (torch.compile) or `magi` (MagiCompiler, needs the `magi` extra and separate compiler installation). |
 | `device` | `cuda:0` | CUDA device the pipeline runs on; `--device` overrides. |
 | `seed` | `42` | Noise seed (per-tile-chunk deterministic). |
 | `tiles_batch_size` | `1` | Tiles per DiT call; larger = better GPU utilisation, more peak memory. |

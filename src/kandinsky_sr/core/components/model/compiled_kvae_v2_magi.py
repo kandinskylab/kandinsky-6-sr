@@ -52,6 +52,7 @@ SegmentFn = Callable[[torch.Tensor, tuple[torch.Tensor, ...]], tuple[torch.Tenso
 
 MAGI_IMPORT_HINT = (
     "magi_compiler is not installed (>= v1.1.0 required). Install with:\n"
+    '  pip install "kandinsky-6-sr[magi]" "setuptools>=61.0" wheel versioningit\n'
     '  pip install --no-build-isolation "magi_compiler @ '
     'git+https://github.com/SandAI-org/MagiCompiler.git@v1.1.0"\n'
     "Or use the region-compiled KVAE (kandinsky_sr.model.compiled_kvae) instead."

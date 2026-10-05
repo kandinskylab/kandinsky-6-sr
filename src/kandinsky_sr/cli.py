@@ -15,6 +15,7 @@ import os
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -390,7 +391,11 @@ def _save_sr(  # noqa: PLR0913 — output knobs stay explicit
     )
 
 
-app = cyclopts.App(name="kandy-sr", help="Tiled LU + DiT super-resolution inference CLI")
+app = cyclopts.App(
+    name="kandy-sr",
+    help="Tiled LU + DiT super-resolution inference CLI",
+    version=lambda: version("kandinsky-6-sr"),
+)
 # Keep the old module-level name available for callers that imported ``cli``.
 cli = app
 

@@ -15,10 +15,10 @@ setup:
 
 # Also build the MagiCompiler KVAE backend (`vae_backend: magi`).
 setup-magi:
-    @uv sync --group dev --extra magi
+    @uv sync --group dev --group magi --extra magi
 
 # Sync into the ACTIVE conda environment instead of .venv (no venv is created).
-# Extras pass through: just setup-conda --extra magi
+# Extras pass through: just setup-conda --group magi --extra magi
 setup-conda *ARGS:
     @if [ -z "$CONDA_PREFIX" ]; then echo "Error: no conda environment is active. Activate one first (e.g. 'conda activate myenv')." && exit 1; fi
     @echo "=== Syncing kandinsky_sr into conda env $CONDA_PREFIX ==="

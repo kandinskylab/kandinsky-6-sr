@@ -131,7 +131,7 @@ class K6VSRLoadModel:
                 "vae_backend": combo_input(
                     ("torch", "magi"),
                     "torch",
-                    "KVAE compile backend; 'magi' needs the kandinsky-6-sr[magi] extra.",
+                    "KVAE compile backend; 'magi' needs kandinsky-6-sr[magi] and a separate MagiCompiler v1.1.0 installation.",
                 ),
                 "device": string_input("cuda:0", "CUDA device for every SR component."),
             }

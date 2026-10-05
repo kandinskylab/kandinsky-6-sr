@@ -33,10 +33,10 @@ Requirements: Python >= 3.12 and torch >= 2.10 in ComfyUI's environment, and a C
    python -c "import torch; print(torch.__version__)"   # still your torch build
    ```
 
-2. **Install the SR package** (add `[magi]` for the MagiCompiler KVAE backend):
+2. **Install the SR package** (for the MagiCompiler backend, also follow the [MagiCompiler installation steps](../README.md#1-install)):
 
    ```bash
-   pip install "kandinsky-6-sr @ git+https://github.com/kandinskylab/kandinsky-6-sr"
+   pip install kandinsky-6-sr
    ```
 
 3. **Link this folder into `custom_nodes/`.** It ships inside the `kandinsky-6-sr` repository, so clone it once and link the subfolder with an absolute path (a relative link that does not resolve makes ComfyUI skip the pack):

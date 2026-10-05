@@ -15,7 +15,7 @@ try:
 except ImportError as exc:
     MESSAGE = (
         "ComfyUI-K6-VSR needs the 'kandinsky-6-sr' package in ComfyUI's Python environment: "
-        'pip install "kandinsky-6-sr @ git+https://github.com/kandinskylab/kandinsky-6-sr"'
+        'pip install "kandinsky-6-sr"'
     )
     logging.getLogger(__name__).error("[K6-VSR] %s", MESSAGE)
     raise ImportError(MESSAGE) from exc
