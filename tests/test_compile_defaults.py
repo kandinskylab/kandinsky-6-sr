@@ -34,5 +34,5 @@ def test_flash_attn_is_only_needed_on_a_flash_path() -> None:
     """Importing the DiT blocks must not require flash-attn (module already imported above)."""
     if importlib.util.find_spec("flash_attn") is not None:
         pytest.skip("flash-attn installed; the lazy path cannot be observed")
-    with pytest.raises(ImportError, match="kandinsky-6-video-sr\\[flash\\]"):
+    with pytest.raises(ImportError, match="kandinsky-6-sr\\[flash\\]"):
         nn.flash_attn_funcs()

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "kandinsky-6-video-sr"
+name = "kandinsky-6-sr"
 version = "1.0.0"
 description = "Kandinsky 6 video super-resolution: tiled latent-upscaler + DiT inference"
 readme = "README.md"

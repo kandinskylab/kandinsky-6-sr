@@ -1,6 +1,6 @@
 # The SR pipeline itself (import name kandinsky_sr). Needs Python >= 3.12 and
 # torch >= 2.10 in ComfyUI's environment; add [magi] for the MagiCompiler KVAE backend.
-kandinsky-6-video-sr @ git+https://github.com/kandinskylab/kandinsky-6-sr
+kandinsky-6-sr @ git+https://github.com/kandinskylab/kandinsky-6-sr
 # torchaudio is a ComfyUI requirement, not ours, and is deliberately not listed:
 # it must match the installed torch build exactly (pip install torchaudio==<torch
 # version> from the same index BEFORE ComfyUI's requirements), otherwise pip pulls

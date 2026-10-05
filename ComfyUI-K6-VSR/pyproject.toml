@@ -4,7 +4,7 @@ description = "ComfyUI nodes for Kandinsky 6 video super-resolution (x2 / x2.25 
 version = "0.1.0"
 license = { text = "MIT" }
 requires-python = ">=3.12"
-dependencies = ["kandinsky-6-video-sr"]
+dependencies = ["kandinsky-6-sr"]
 
 [project.urls]
 Repository = "https://github.com/kandinskylab/kandinsky-6-sr"

@@ -1,6 +1,6 @@
 # ComfyUI-K6-VSR
 
-ComfyUI custom nodes for **Kandinsky 6.0 Video Super-Resolution**: tiled x2 / x2.25 / x4 upscaling of 5-second clips with the [Kandinsky-6.0-VSR](https://huggingface.co/kandinskylab/Kandinsky-6.0-VSR-distilled2steps-5s-Diffusers) models — the SR DiT, the KVAE video tokenizer and the x2 / x4 latent upscalers, all in one Diffusers bundle. The nodes are a thin adapter over the [`kandinsky-6-video-sr`](../README.md) package — the same pipeline the `kandy-sr` CLI runs.
+ComfyUI custom nodes for **Kandinsky 6.0 Video Super-Resolution**: tiled x2 / x2.25 / x4 upscaling of 5-second clips with the [Kandinsky-6.0-VSR](https://huggingface.co/kandinskylab/Kandinsky-6.0-VSR-distilled2steps-5s-Diffusers) models — the SR DiT, the KVAE video tokenizer and the x2 / x4 latent upscalers, all in one Diffusers bundle. The nodes are a thin adapter over the [`kandinsky-6-sr`](../README.md) package — the same pipeline the `kandy-sr` CLI runs.
 
 <div align="center">
 <img src="assets/comfyui_workflow.png" alt="ComfyUI workflow: Load Video → Get Video Components → Kandinsky 6 VSR Upscale → Create Video → Save Video, with Kandinsky 6 VSR Load Model feeding the pipeline" width="100%">
@@ -36,7 +36,7 @@ Requirements: Python >= 3.12 and torch >= 2.10 in ComfyUI's environment, and a C
 2. **Install the SR package** (add `[magi]` for the MagiCompiler KVAE backend):
 
    ```bash
-   pip install "kandinsky-6-video-sr @ git+https://github.com/kandinskylab/kandinsky-6-sr"
+   pip install "kandinsky-6-sr @ git+https://github.com/kandinskylab/kandinsky-6-sr"
    ```
 
 3. **Link this folder into `custom_nodes/`.** It ships inside the `kandinsky-6-sr` repository, so clone it once and link the subfolder with an absolute path (a relative link that does not resolve makes ComfyUI skip the pack):

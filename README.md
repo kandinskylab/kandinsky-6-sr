@@ -16,20 +16,20 @@
 
 # Kandinsky 6.0 Video Super-Resolution
 
-Tiled video super-resolution for the **Kandinsky 6.0 Video** pipeline: **KVAE encode → latent upscaler → DiT (tiled) → KVAE decode**, x2 / x4 / x2.25 upscale of 5-second clips. Shipped as the `kandinsky-6-video-sr` package (import name `kandinsky_sr`) with the `kandy-sr` CLI; the [Kandinsky 6](https://github.com/kandinskylab/kandinsky-6) pipeline embeds it for generation-then-SR.
+Tiled video super-resolution for the **Kandinsky 6.0 Video** pipeline: **KVAE encode → latent upscaler → DiT (tiled) → KVAE decode**, x2 / x4 / x2.25 upscale of 5-second clips. Shipped as the `kandinsky-6-sr` package (import name `kandinsky_sr`) with the `kandy-sr` CLI; the [Kandinsky 6](https://github.com/kandinskylab/kandinsky-6) pipeline embeds it for generation-then-SR.
 
 ## 🚀 Getting Started
 
 ### 1. Install
 
 ```bash
-pip install "kandinsky-6-video-sr @ git+https://github.com/kandinskylab/kandinsky-6-sr"
+pip install "kandinsky-6-sr @ git+https://github.com/kandinskylab/kandinsky-6-sr"
 ```
 
 With the MagiCompiler KVAE backend (`vae_backend: magi`):
 
 ```bash
-pip install "kandinsky-6-video-sr[magi] @ git+https://github.com/kandinskylab/kandinsky-6-sr"
+pip install "kandinsky-6-sr[magi] @ git+https://github.com/kandinskylab/kandinsky-6-sr"
 ```
 
 ### 2. Setup config

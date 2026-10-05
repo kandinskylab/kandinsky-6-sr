@@ -701,7 +701,7 @@ wheels = [
 ]
 
 [[package]]
-name = "kandinsky-6-video-sr"
+name = "kandinsky-6-sr"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [

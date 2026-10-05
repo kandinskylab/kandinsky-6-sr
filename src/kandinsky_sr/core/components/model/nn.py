@@ -54,7 +54,7 @@ def flash_attn_funcs() -> tuple[Any, Any]:
         msg = (
             "This attention path (dense flash self-attention or text cross-attention) requires "
             "flash-attn, which is not installed. Nabla text-free models do not need it; for the "
-            "flash paths install the flash extra (needs nvcc): pip install 'kandinsky-6-video-sr[flash]'"
+            "flash paths install the flash extra (needs nvcc): pip install 'kandinsky-6-sr[flash]'"
         )
         raise ImportError(msg) from exc
     return flash_attn_varlen_func, flash_attn_varlen_qkvpacked_func
