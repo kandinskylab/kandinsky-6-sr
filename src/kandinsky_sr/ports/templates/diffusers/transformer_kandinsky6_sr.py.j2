@@ -1,0 +1,218 @@
+# Copyright 2025 The Kandinsky Team and The HuggingFace Team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Kandinsky 6 SR transformer Diffusers component."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+import torch
+from diffusers.configuration_utils import ConfigMixin, register_to_config
+from diffusers.models.attention import AttentionModuleMixin
+from diffusers.models.attention_dispatch import dispatch_attention_fn
+from diffusers.models.modeling_utils import ModelMixin
+from torch import Tensor
+
+from .modeling_kandinsky6 import Kandinsky6AttnProcessor
+
+
+class Kandinsky6SRAttentionProcessor(Kandinsky6AttnProcessor):
+    """Diffusers attention processor used by the SR transformer."""
+
+    def __call__(
+        self,
+        attn: Any,
+        query: Tensor,
+        key: Tensor,
+        value: Tensor,
+        cu_seqlens_q: Tensor,
+        cu_seqlens_k: Tensor,
+        *,
+        sparse_params: dict[str, Any] | None = None,
+        attn_mask: Tensor | None = None,
+    ) -> Tensor:
+        if sparse_params is not None:
+            return attn.attention_flex(query, key, value, sparse_params=sparse_params)
+
+        if getattr(attn, "cached_k", None) is not None:
+            key, value, cu_seqlens_q, cu_seqlens_k = self.assemble_cached_attention_inputs(
+                key, value, attn.cached_k, attn.cached_v, cu_seqlens_q, attn.cached_cu_seqlens
+            )
+        if getattr(attn, "return_kv", False):
+            attn.cached_k, attn.cached_v, attn.cached_cu_seqlens = key, value, cu_seqlens_k
+
+        outputs = []
+        batch_size = cu_seqlens_q.numel() - 1
+        for index in range(batch_size):
+            query_start, query_end = int(cu_seqlens_q[index]), int(cu_seqlens_q[index + 1])
+            key_start, key_end = int(cu_seqlens_k[index]), int(cu_seqlens_k[index + 1])
+            outputs.append(
+                dispatch_attention_fn(
+                    query[query_start:query_end].unsqueeze(0),
+                    key[key_start:key_end].unsqueeze(0),
+                    value[key_start:key_end].unsqueeze(0),
+                    attn_mask=self._packed_attention_mask(
+                        attn_mask,
+                        index,
+                        batch_size,
+                        query_end - query_start,
+                        key_end - key_start,
+                    ),
+                    backend=self._attention_backend,
+                    parallel_config=self._parallel_config,
+                )[0]
+            )
+        return torch.cat(outputs, dim=0)
+
+    @staticmethod
+    def assemble_cached_attention_inputs(
+        new_key: Tensor,
+        new_value: Tensor,
+        cached_key: Tensor,
+        cached_value: Tensor,
+        cu_seqlens_new: Tensor,
+        cached_cu_seqlens: Tensor,
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        """Merge cached and new K/V into packed varlen attention inputs."""
+        num_seqs = cu_seqlens_new.numel() - 1
+        key_parts: list[Tensor] = []
+        value_parts: list[Tensor] = []
+        for index in range(num_seqs):
+            cache_start, cache_end = int(cached_cu_seqlens[index]), int(cached_cu_seqlens[index + 1])
+            new_start, new_end = int(cu_seqlens_new[index]), int(cu_seqlens_new[index + 1])
+            key_parts.append(cached_key[cache_start:cache_end])
+            key_parts.append(new_key[new_start:new_end])
+            value_parts.append(cached_value[cache_start:cache_end])
+            value_parts.append(new_value[new_start:new_end])
+
+        key = torch.cat(key_parts, dim=0)
+        value = torch.cat(value_parts, dim=0)
+        merged_lens = torch.diff(cached_cu_seqlens) + torch.diff(cu_seqlens_new)
+        cu_seqlens_k = torch.cat([cu_seqlens_new.new_zeros(1), torch.cumsum(merged_lens, dim=0)]).to(
+            cu_seqlens_new.dtype
+        )
+        return key, value, cu_seqlens_new, cu_seqlens_k
+
+    @staticmethod
+    def _packed_attention_mask(
+        attn_mask: Tensor | None,
+        index: int,
+        batch_size: int,
+        query_length: int,
+        key_length: int,
+    ) -> Tensor | None:
+        if attn_mask is None:
+            return None
+        if attn_mask.ndim == 1:
+            return attn_mask[:key_length].unsqueeze(0)
+        if attn_mask.ndim == 2:
+            if attn_mask.shape[0] in (1, batch_size):
+                return attn_mask[index : index + 1, :key_length]
+            return attn_mask[:query_length, :key_length]
+        if attn_mask.shape[0] in (1, batch_size):
+            attn_mask = attn_mask[index : index + 1]
+        return attn_mask[..., :query_length, :key_length]
+
+{{ inline_module(
+    "kandinsky_sr/core/components/model/utils.py",
+    replacements={
+        "if TYPE_CHECKING:\n    from torch.nn import Module": "",
+        '"""Utility functions for tensor manipulation, patching, and sparse attention masks."""': "",
+    },
+    exclude_names=[
+        "exist",
+        "freeze",
+        "mean_var_len",
+        "global_patching",
+        "global_merge",
+    ],
+) }}
+
+{{ inline_module(
+    "kandinsky_sr/core/components/model/nn.py",
+    exclude_names=["flash_attn_funcs"],
+    exclude_methods={
+        "MultiheadSelfAttention": ["scaled_dot_product_attention", "attend_with_kv_cache"],
+        "MultiheadCrossAttention": ["scaled_dot_product_attention"],
+    },
+    replacements={
+        "from loguru import logger": "from diffusers.utils import logging\nlogger = logging.get_logger(__name__)",
+        "from flash_attn import flash_attn_varlen_func, flash_attn_varlen_qkvpacked_func  # pyright: ignore": "",
+        "try:\n    import flash_attn_interface  # pyright: ignore\n\n    FA3 = True\nexcept ImportError:\n    FA3 = False": "",
+        "_disable_dynamo_if_fa2 = (lambda fn: fn) if FA3 else torch.compiler.disable": "",
+        'logger.warning("nabla flex bwd-config shim no-op (config introspection failed): {}", exp)':
+            'logger.warning("nabla flex bwd-config shim no-op (config introspection failed): %s", exp)',
+        'logger.warning("Could not install nabla flex bwd-config shim: {}", exp)':
+            'logger.warning("Could not install nabla flex bwd-config shim: %s", exp)',
+        "@ModelLogger.log_attention": "",
+        "class MultiheadSelfAttention(nn.Module):": (
+        "class MultiheadSelfAttention(nn.Module, AttentionModuleMixin):\n"
+            "    _default_processor_cls = Kandinsky6SRAttentionProcessor\n"
+            "    _available_processors = [Kandinsky6SRAttentionProcessor]"
+        ),
+        "class MultiheadCrossAttention(nn.Module):": (
+        "class MultiheadCrossAttention(nn.Module, AttentionModuleMixin):\n"
+            "    _default_processor_cls = Kandinsky6SRAttentionProcessor\n"
+            "    _available_processors = [Kandinsky6SRAttentionProcessor]"
+        ),
+        "        self.cached_cu_seqlens: Tensor | None = None\n        self.return_kv = False\n\n    def get_qkv": (
+            "        self.cached_cu_seqlens: Tensor | None = None\n"
+            "        self.return_kv = False\n"
+            "        self.set_processor(self._default_processor_cls())\n\n"
+            "    def get_qkv"
+        ),
+        "        self.out_layer = nn.Linear(num_channels, num_channels, bias=True)\n\n    def get_qkv(self, x: Tensor, cond: Tensor)": (
+            "        self.out_layer = nn.Linear(num_channels, num_channels, bias=True)\n"
+            "        self.set_processor(self._default_processor_cls())\n\n"
+            "    def get_qkv(self, x: Tensor, cond: Tensor)"
+        ),
+        "        if sparse_params is not None:\n"
+        "            out = self.attention_flex(query, key, value, sparse_params=sparse_params)\n"
+        "        else:\n"
+        "            out = self.scaled_dot_product_attention(query, key, value, cu_seqlens)\n": (
+            "        out = self.processor(\n"
+            "            self, query, key, value, cu_seqlens, cu_seqlens, sparse_params=sparse_params\n"
+            "        )\n"
+        ),
+        "        out = self.scaled_dot_product_attention(query, key, value, cu_seqlens, cond_cu_seqlens)": (
+            "        out = self.processor(\n"
+            "            self, query, key, value, cu_seqlens, cond_cu_seqlens\n"
+            "        )"
+        ),
+    },
+) }}
+
+{{ inline_module(
+    "kandinsky_sr/core/components/model/dit.py",
+    exclude_names=["get_dit"],
+    replacements={
+        "@ModelLogger.log_transformer_block": "",
+        "@ModelLogger.log_transformer": "",
+        "class DiffusionTransformer3D(nn.Module):": (
+            "class Kandinsky6SRTransformer3DModel(ModelMixin, ConfigMixin):"
+        ),
+        "    def __init__(\n        self,\n        in_visual_dim: int = 4,": (
+            '    _no_split_modules = ["TransformerEncoderBlock", "TransformerDecoderBlock"]\n'
+            '    _repeated_blocks  = ["TransformerEncoderBlock", "TransformerDecoderBlock"]\n\n'
+            "    @register_to_config\n    def __init__(\n        self,\n        in_visual_dim: int = 4,"
+        ),
+        "        use_lq_noise_cond: bool = False,\n    ) -> None:": "        use_lq_noise_cond: bool = False,\n        attribute_overrides: Mapping[str, Any] | None = None,\n        sr_params: Mapping[str, Any] | None = None,\n    ) -> None:",
+        "        self.out_layer = OutLayer(model_dim, time_dim, out_visual_dim, patch_size)": "        self.out_layer = OutLayer(model_dim, time_dim, out_visual_dim, patch_size)\n        for name, value in (attribute_overrides or {}).items():\n            setattr(self, str(name), value)",
+        "DiffusionTransformer3D": "Kandinsky6SRTransformer3DModel",
+    },
+) }}
+
+__all__ = ["Kandinsky6SRTransformer3DModel"]

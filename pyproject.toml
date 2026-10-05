@@ -1,0 +1,124 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kandinsky-6-video-sr"
+version = "0.3.0"
+description = "Kandinsky 6 video super-resolution: tiled latent-upscaler + DiT inference"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE", "LICENSE-APACHE"]
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "av>=18.0.0",
+    "cyclopts>=4.22.0",
+    "diffusers>=0.39.0",
+    "einops>=0.8.2",
+    "huggingface-hub>=1.0.0",
+    "loguru>=0.7.3",
+    "numpy>=2.0.0",
+    "omegaconf>=2.3.0",
+    "pydantic>=2.11.0",
+    "pyyaml>=6.0.2",
+    "safetensors>=0.8.0",
+    "torch>=2.10.0",
+    "torchvision>=0.25.0",
+    "tqdm>=4.67.0",
+]
+
+[project.optional-dependencies]
+# FlashAttention-2 for the dense-flash self-attention and text cross-attention
+# paths (built from source, needs nvcc). The nabla text-free release models
+# never reach those paths, so it is optional; nn.py imports it lazily.
+flash = [
+    "flash-attn>=2.0.0",
+]
+# Optional MagiCompiler KVAE backend (`vae_backend: magi`; the default is
+# torch.compile). Not on PyPI —
+# pinned to the v1.1.0 git tag in [tool.uv.sources]. Must be >= v1.1.0:
+# magi_patch.py patches magi_compiler._api._mark_static_shapes, which v1.0.0
+# does not have yet. Do NOT trust upstream's self-reported version: their
+# versioningit default-version is "1.0.0", so any commit built without git
+# tags reports 1.0.0. Its wheel declares NO runtime deps (upstream ships them
+# in requirements.txt), so they are listed here explicitly; everything is
+# linux-only. One system package remains manual: `sudo apt install graphviz`.
+magi = [
+    "magi_compiler ; sys_platform == 'linux'",
+    "cuda-python ; sys_platform == 'linux'",
+    "depyf ; sys_platform == 'linux'",
+    "graphviz ; sys_platform == 'linux'",
+    "pydantic-settings ; sys_platform == 'linux'",
+    "seaborn ; sys_platform == 'linux'",
+]
+
+[project.scripts]
+kandy-sr = "kandinsky_sr.cli:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.22",
+]
+
+[tool.uv]
+preview = true
+# This repo's own environment pins the validated torch 2.10.0. The CUDA build is
+# NOT pinned here: `[tool.uv.sources]` travels with the package to git consumers
+# (k6_video pins its own torch index), so this repo's JUSTFILE selects the
+# CUDA 12.8 wheels via UV_INDEX instead (NVIDIA drivers >= 12.8).
+constraint-dependencies = ["torch==2.10.0", "torchvision==0.25.0"]
+# flash-attn and MagiCompiler must NOT build in an isolated env: their
+# build-system.requires pull torch (gigabytes) and can hang. With isolation off,
+# the real build needs are supplied via extra-build-dependencies below.
+no-build-isolation-package = [
+    "flash-attn",
+    "magi_compiler",
+]
+
+# MagiCompiler's build backend needs torch/seaborn just to REPORT metadata; its
+# wheel declares no runtime deps at all, so declare that statically and let uv
+# lock the git ref without ever building the package.
+[[tool.uv.dependency-metadata]]
+name = "magi-compiler"
+version = "1.1.0"
+requires-dist = []
+
+[tool.uv.extra-build-dependencies]
+flash-attn = ["torch>=2.4.0", "setuptools", "packaging", "ninja"]
+# The actual (undeclared) build needs of MagiCompiler's hatchling backend.
+magi-compiler = ["hatchling", "versioningit", "editables"]
+
+[tool.uv.sources]
+magi_compiler = { git = "https://github.com/SandAI-org/MagiCompiler.git", tag = "v1.1.0" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kandinsky_sr"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/kandinsky_sr",
+    "README.md",
+    "LICENSE",
+    "LICENSE-APACHE",
+    "pyproject.toml",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP", "PL", "B", "ERA", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["kandinsky_sr", "k6_vsr_comfy"]
+
+[tool.ruff.lint.per-file-ignores]
+# ComfyUI custom node packs are named after their repo folder (hyphens included).
+"ComfyUI-K6-VSR/**" = ["N999"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

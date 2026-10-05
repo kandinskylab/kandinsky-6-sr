@@ -1,0 +1,77 @@
+# Copyright 2025 The Kandinsky Team and The HuggingFace Team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Kandinsky 6 SR KVAE Diffusers component."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+from diffusers.configuration_utils import ConfigMixin, register_to_config
+from diffusers.models.modeling_utils import ModelMixin
+from diffusers.utils.accelerate_utils import apply_forward_hook
+from torch import Tensor
+
+{{ inline_module("kandinsky_sr/core/components/video_kvae/utils.py") }}
+Conv3d = SafeConv3d
+
+{{ inline_module(
+    "kandinsky_sr/core/components/video_kvae/layers.py",
+    exclude_names=["AttentionBlock"],
+    replacements={"from einops import rearrange": ""},
+) }}
+{{ inline_module(
+    "kandinsky_sr/core/components/video_kvae/cached_layers.py",
+    replacements={
+        "from einops import rearrange": "",
+        "rearrange(input_, 'b c t h w -> (b t) c h w')":
+            "input_.permute(0, 2, 1, 3, 4).reshape(-1, input_.shape[1], input_.shape[3], input_.shape[4])",
+        "rearrange(pxs_out, '(b t) c h w -> b c t h w', t=input_.size(2))":
+            "pxs_out.reshape(input_.shape[0], input_.size(2), pxs_out.shape[1], pxs_out.shape[2], pxs_out.shape[3]).permute(0, 2, 1, 3, 4)",
+        'rearrange(input_, "b c t h w -> (b h w) c t")':
+            "input_.permute(0, 3, 4, 1, 2).reshape(-1, input_.shape[1], input_.shape[2])",
+        'rearrange(full_interp, "(b h w) c t -> b c t h w", h=input_.size(-2), w=input_.size(-1))':
+            "full_interp.reshape(input_.shape[0], input_.size(-2), input_.size(-1), full_interp.shape[1], full_interp.shape[2]).permute(0, 3, 4, 1, 2)",
+    },
+) }}
+{{ inline_module(
+    "kandinsky_sr/core/components/video_kvae/regularizers.py",
+    replacements={"from torch import nn": ""},
+) }}
+{{ inline_module("kandinsky_sr/core/components/video_kvae/cached_enc_dec.py") }}
+{{ inline_module(
+    "kandinsky_sr/core/components/video_kvae/cached_model.py",
+    exclude_names=["CausalVAE"],
+    exclude_methods={"CachedCausalVAE": ["init_from_ckpt"]},
+    replacements={
+        "class CachedCausalVAE(CausalVAE):\n    def __init__(self, encoder_conf, decoder_conf, scaling_factor=None, mean=None, ckpt_path=None):": "class Kandinsky6SRVAE(ModelMixin, ConfigMixin):\n    @staticmethod\n    def normalize_data(data):\n        return data / 128 - 1.0\n\n    @staticmethod\n    def denormalize_data(data):\n        return (data + 1) * 128\n\n    @register_to_config\n    def __init__(\n        self,\n        vae_type: str,\n        encoder_config: Mapping[str, Any],\n        decoder_config: Mapping[str, Any],\n        scaling_factor: float = 1.0,\n        spatial_factor: int = 16,\n        temporal_factor: int = 4,\n    ) -> None:",
+        "        super(CausalVAE, self).__init__()": "        super().__init__()",
+        "        self.conf = {'enc' : encoder_conf,\n                     'dec' : decoder_conf}": "        if vae_type != \"video-kvae\":\n            raise ValueError(f\"Kandinsky6SRVAE supports only 'video-kvae', got: {vae_type!r}\")\n        self.conf = {'enc': encoder_config,\n                     'dec': decoder_config}",
+        "        self.encoder = CachedEncoder3D(**encoder_conf)\n        self.decoder = CachedDecoder3D(**decoder_conf)\n        self.regularizer = DiagonalGaussianRegularizer(sample=False)\n\n        if ckpt_path is not None:\n            self.init_from_ckpt(ckpt_path)": "        self.encoder = CachedEncoder3D(**encoder_config)\n        self.decoder = CachedDecoder3D(**decoder_config)\n        self.regularizer = DiagonalGaussianRegularizer(sample=False)\n        self.spatial_factor = int(spatial_factor)\n        self.temporal_factor = int(temporal_factor)",
+        "    def encode(self, x, seg_len=16):": "    @apply_forward_hook\n    def encode(self, x, seg_len=16):",
+        "    def decode(self, z, split_list=None):": "    @apply_forward_hook\n    def decode(self, z, split_list=None):",
+        "CachedCausalVAE": "Kandinsky6SRVAE",
+        "class Kandinsky6SRVAE(ModelMixin, ConfigMixin):": "class Kandinsky6SRVAE(ModelMixin, ConfigMixin):\n    \"\"\"Causal 3D VAE used by the Kandinsky 6 video super-resolution pipeline.\n\n    The encoder and decoder process videos in temporal segments while reusing\n    their causal convolution state between segments. This keeps memory usage\n    bounded for long videos and preserves the checkpoint layout of the KVAE.\n\n    Args:\n        vae_type (`str`): VAE architecture identifier. Must be ``\"video-kvae\"``.\n        encoder_config (`dict`): Configuration for the cached 3D encoder.\n        decoder_config (`dict`): Configuration for the cached 3D decoder.\n        scaling_factor (`float`, *optional*, defaults to 1.0): Latent scaling\n            factor stored in the component configuration.\n        spatial_factor (`int`, *optional*, defaults to 16): Spatial compression\n            factor of the VAE.\n        temporal_factor (`int`, *optional*, defaults to 4): Temporal compression\n            factor of the VAE.\n    \"\"\"",
+        "    @staticmethod\n    def normalize_data(data):": (
+            '    _no_split_modules = ["CachedEncoder3D", "CachedDecoder3D"]\n\n'
+            "    @staticmethod\n    def normalize_data(data):"
+        ),
+        "    def normalize_data(data):\n        return data / 128 - 1.0": "    def normalize_data(data):\n        \"\"\"Normalize pixel values to the KVAE input range.\"\"\"\n        return data / 128 - 1.0",
+        "    def denormalize_data(data):\n        return (data + 1) * 128": "    def denormalize_data(data):\n        \"\"\"Convert normalized KVAE outputs back to pixel values.\"\"\"\n        return (data + 1) * 128",
+    },
+) }}
+
+
+__all__ = ["Kandinsky6SRVAE"]

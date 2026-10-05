@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 730" width="1160" height="730" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <style>
+      .box { fill: #fff; stroke: #333; stroke-width: 1.5; rx: 6; }
+      .grey { fill: #e5e7eb; stroke: #333; stroke-width: 1.5; rx: 6; }
+      .dark { fill: #4b5563; stroke: #333; stroke-width: 1.5; rx: 6; }
+      .green { fill: #059669; stroke: #047857; stroke-width: 1.5; rx: 6; }
+      .lgreen { fill: #86efac; stroke: #333; stroke-width: 1.5; rx: 6; }
+      .line { fill: none; stroke: #333; stroke-width: 1.6; marker-end: url(#arrow); }
+      .t { fill: #111; text-anchor: middle; }
+      .tw { fill: #fff; text-anchor: middle; }
+      .m { font-family: "STIX Two Text", "Times New Roman", Times, serif; font-style: italic; }
+      .tag { fill: #fff; stroke: #9ca3af; stroke-width: 1; rx: 6; }
+      .tagt { fill: #1f2937; font-size: 14px; text-anchor: middle; }
+    </style>
+  </defs>
+  <rect x="0" y="0" width="1160" height="730" fill="#fff"/>
+
+  <!-- ===== Panel A: latent tiling + stitching ===== -->
+  <rect x="20" y="30" width="1120" height="185" rx="10" fill="#f3f4f6"/>
+  <rect x="34" y="18" width="220" height="24" class="tag"/>
+  <text x="144" y="35" class="tagt">Latent tiling + Stitching</text>
+
+  <rect x="36" y="90" width="100" height="70" class="box"/>
+  <text x="86" y="121" class="t" font-size="14">LQ Video</text>
+  <text x="86" y="140" class="t" font-size="12">pixels</text>
+  <path class="line" d="M136,125 H150"/>
+
+  <path d="M154,80 L232,102 L232,148 L154,170 Z" fill="#9ca3af" stroke="#333" stroke-width="1.5"/>
+  <text x="193" y="121" class="t" font-size="13">KVAE</text>
+  <text x="193" y="138" class="t" font-size="13">Encoder</text>
+  <path class="line" d="M232,125 H246"/>
+
+  <rect x="250" y="80" width="130" height="90" class="box"/>
+  <text x="315" y="112" class="t">LQ-latents</text>
+  <text x="315" y="152" class="t m" font-size="26">z<tspan font-size="15" baseline-shift="sub">LQ</tspan></text>
+
+  <text x="460" y="66" class="t">latent tile grid</text>
+  <rect x="400" y="75" width="120" height="100" rx="6" fill="#fff" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <g id="grid" transform="translate(410 85)">
+      <rect x="0" y="0" width="44" height="36" rx="2" fill="#f87171" fill-opacity="0.45" stroke="#f87171" stroke-width="1"/>
+      <rect x="28" y="0" width="44" height="36" rx="2" fill="#60a5fa" fill-opacity="0.45" stroke="#60a5fa" stroke-width="1"/>
+      <rect x="56" y="0" width="44" height="36" rx="2" fill="#4ade80" fill-opacity="0.45" stroke="#4ade80" stroke-width="1"/>
+      <rect x="0" y="22" width="44" height="36" rx="2" fill="#fbbf24" fill-opacity="0.45" stroke="#fbbf24" stroke-width="1"/>
+      <rect x="28" y="22" width="44" height="36" rx="2" fill="#a78bfa" fill-opacity="0.45" stroke="#a78bfa" stroke-width="1"/>
+      <rect x="56" y="22" width="44" height="36" rx="2" fill="#f472b6" fill-opacity="0.45" stroke="#f472b6" stroke-width="1"/>
+      <rect x="0" y="44" width="44" height="36" rx="2" fill="#34d399" fill-opacity="0.45" stroke="#34d399" stroke-width="1"/>
+      <rect x="28" y="44" width="44" height="36" rx="2" fill="#fb923c" fill-opacity="0.45" stroke="#fb923c" stroke-width="1"/>
+      <rect x="56" y="44" width="44" height="36" rx="2" fill="#818cf8" fill-opacity="0.45" stroke="#818cf8" stroke-width="1"/>
+  </g>
+  <path class="line" d="M380,125 H396"/>
+
+  <text x="660" y="66" class="t">HQ tiles</text>
+  <rect x="600" y="75" width="120" height="100" class="box"/>
+  <use href="#grid" transform="translate(200 0)"/>
+  <path class="line" d="M720,125 H766"/>
+
+  <rect x="770" y="75" width="185" height="100" class="grey"/>
+  <text x="862" y="105" class="t">Hanning blend</text>
+  <text x="862" y="145" class="t m" font-size="17">y = Σ<tspan font-size="11" baseline-shift="sub">i</tspan> w<tspan font-size="11" baseline-shift="sub">i</tspan>·x̂<tspan font-size="11" baseline-shift="sub">i</tspan> / Σ<tspan font-size="11" baseline-shift="sub">i</tspan> w<tspan font-size="11" baseline-shift="sub">i</tspan></text>
+  <path class="line" d="M955,125 H996"/>
+
+  <rect x="1000" y="90" width="110" height="70" class="green"/>
+  <text x="1055" y="130" class="tw">HQ Video</text>
+
+  <!-- ===== Panel B: per-tile super-resolution ===== -->
+  <rect x="20" y="235" width="1120" height="480" rx="10" fill="#f0fdf4"/>
+  <rect x="34" y="223" width="230" height="24" class="tag"/>
+  <text x="149" y="240" class="tagt">Per-tile Super-Resolution</text>
+
+  <!-- for each tile -->
+  <path class="line" d="M460,175 V290 H120 V311"/>
+  <text x="290" y="283" class="t" font-size="14">for each tile</text>
+
+  <rect x="60" y="315" width="120" height="80" class="box"/>
+  <text x="120" y="349" class="t">latents</text>
+  <text x="120" y="371" class="t">tile</text>
+  <path class="line" d="M180,355 H226"/>
+
+  <rect x="230" y="305" width="240" height="100" class="dark"/>
+  <text x="350" y="361" class="tw" font-size="15">Latent Upscaler ×2 / ×4</text>
+  <path class="line" d="M470,355 H516"/>
+
+  <rect x="520" y="310" width="135" height="90" class="box"/>
+  <text x="587" y="336" class="t" font-size="13">LQ tile</text>
+  <text x="587" y="354" class="t" font-size="13">in output res</text>
+  <text x="587" y="386" class="t m" font-size="22">z<tspan font-size="13" baseline-shift="super">↑</tspan><tspan font-size="13" baseline-shift="sub">LQ</tspan></text>
+  <path class="line" d="M655,355 H696"/>
+
+  <rect x="700" y="305" width="250" height="100" class="grey"/>
+  <text x="825" y="335" class="t">LQ Latent degradation</text>
+  <text x="825" y="378" class="t m" font-size="15">z̃<tspan font-size="10" baseline-shift="super">↑</tspan><tspan font-size="10" baseline-shift="sub">LQ</tspan> = √(1−s²) · z<tspan font-size="10" baseline-shift="super">↑</tspan><tspan font-size="10" baseline-shift="sub">LQ</tspan> + s · ε</text>
+  <path class="line" d="M950,355 H996"/>
+
+  <rect x="1000" y="315" width="110" height="80" class="box"/>
+  <text x="1055" y="365" class="t m" font-size="26">z̃<tspan font-size="14" baseline-shift="super">↑</tspan><tspan font-size="14" baseline-shift="sub">LQ</tspan></text>
+
+  <!-- to the denoise loop -->
+  <path class="line" d="M1055,395 V440 H215 V511"/>
+
+  <!-- inner loop panel -->
+  <rect x="40" y="480" width="700" height="215" rx="10" fill="#dcfce7" stroke="#86efac" stroke-width="1.5"/>
+  <rect x="290" y="468" width="200" height="24" class="tag"/>
+  <text x="390" y="485" class="tagt">Iterative denoise loop</text>
+
+  <rect x="130" y="520" width="170" height="90" class="lgreen"/>
+  <text x="215" y="550" class="t">SR DiT</text>
+  <text x="215" y="590" class="t m" font-size="20">v<tspan font-size="12" baseline-shift="sub">θ</tspan>(z<tspan font-size="12" baseline-shift="sub">t</tspan>, t)</text>
+  <path class="line" d="M300,565 H356"/>
+
+  <rect x="360" y="520" width="235" height="90" class="grey"/>
+  <text x="477" y="550" class="t">Euler step</text>
+  <text x="477" y="590" class="t m" font-size="18">z<tspan font-size="11" baseline-shift="sub">t−Δt</tspan> = z<tspan font-size="11" baseline-shift="sub">t</tspan> − Δt · v<tspan font-size="11" baseline-shift="sub">θ</tspan></text>
+  <path class="line" d="M595,565 H641"/>
+
+  <rect x="645" y="530" width="85" height="70" class="box"/>
+  <text x="687" y="574" class="t m" font-size="24">ẑ<tspan font-size="13" baseline-shift="sub">HQ</tspan></text>
+
+  <!-- loop back -->
+  <path class="line" d="M477,610 V645 H215 V614"/>
+  <text x="346" y="666" class="t" font-size="14">iterative sampling for t→0</text>
+
+  <!-- VAE decoder (outside the loop) -->
+  <path class="line" d="M730,565 H806"/>
+  <path d="M810,515 L935,538 L935,592 L810,615 Z" fill="#9ca3af" stroke="#333" stroke-width="1.5"/>
+  <text x="872" y="570" class="t" font-size="14">KVAE Decoder</text>
+  <path class="line" d="M935,565 H996"/>
+
+  <rect x="1000" y="530" width="110" height="70" class="green"/>
+  <text x="1055" y="570" class="tw">HQ tile</text>
+
+  <!-- HQ tile -> HQ tiles -->
+  <path class="line" d="M1110,565 H1128 V262 H660 V179"/>
+</svg>
