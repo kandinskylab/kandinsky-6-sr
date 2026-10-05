@@ -22,16 +22,11 @@ Tiled video super-resolution for the **Kandinsky 6.0 Video** pipeline: **KVAE en
 
 ### 1. Install
 
-Install the base package from PyPI (MagiCompiler is not required; the default backend is `torch`):
-
-```bash
-pip install kandinsky-6-sr
-```
-
-Alternatively, install from GitHub (repository access required while it is private):
+Install the base package from GitHub (MagiCompiler is not required; the default backend is `torch`):
 
 ```bash
 pip install "kandinsky-6-sr @ git+https://github.com/kandinskylab/kandinsky-6-sr"
+# pip install kandinsky-6-sr
 ```
 
 With the MagiCompiler KVAE backend (`vae_backend: magi`, Linux with NVIDIA CUDA):
@@ -41,7 +36,8 @@ not available on PyPI and must be installed separately from its `v1.1.0` Git tag
 (the older `v1.0.0` is not compatible):
 
 ```bash
-pip install "kandinsky-6-sr[magi]"
+pip install "kandinsky-6-sr[magi] @ git+https://github.com/kandinskylab/kandinsky-6-sr"
+# pip install "kandinsky-6-sr[magi]"
 pip install "setuptools>=61.0" wheel versioningit
 pip install --no-build-isolation "magi_compiler @ git+https://github.com/SandAI-org/MagiCompiler.git@v1.1.0"
 ```
