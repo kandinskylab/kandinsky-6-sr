@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import sys
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -48,6 +49,12 @@ def native():
             contract=importlib.import_module("kandinsky6_vsr.sr_contract"),
             detection=importlib.import_module("comfy.model_detection"),
             models=importlib.import_module("comfy.supported_models"),
+            motion=importlib.import_module(
+                "kandinsky6_vsr.runtime.core.components.latent_upscaler.model.motion_correspondence"
+            ),
+            distributed=importlib.import_module(
+                "kandinsky6_vsr.runtime.core.components.video_kvae.ctx.utils_distributed"
+            ),
         )
 
 
@@ -222,3 +229,86 @@ def test_dit_detection_distinguishes_regular_and_distilled_models(native, n_grid
         state[prefix + "feed_forward.in_layer.weight"] = torch.empty(config["ff_dim"], model_dim, device="meta")
         state[prefix + "self_attention.query_norm.weight"] = torch.empty(sum(config["axes_dims"]), device="meta")
     assert native.register.detect_sr_dit(state, "") == {"image_model": "kandinsky6_sr", "n_grid": n_grid}
+
+
+def test_vae_loader_builds_eager_codec_without_compiling(native, monkeypatch, tmp_path):
+    checkpoint = tmp_path / "vae.safetensors"
+    checkpoint.touch()
+    architecture = SimpleNamespace(
+        encoder_params={"z_channels": 64}, decoder_params={"z_channels": 64}, scaling_factor=0.910344004631042
+    )
+    module = torch.nn.Linear(1, 1)
+    module.init_from_ckpt = mock.Mock()
+    patcher = object()
+    monkeypatch.setattr(native.nodes, "_resolve_model_file", lambda *_: checkpoint)
+    monkeypatch.setattr(native.nodes, "_diffusers_config", lambda _: {"spatial_factor": 16, "temporal_factor": 4})
+    monkeypatch.setattr(native.nodes, "kvae_architecture", lambda _: architecture)
+    monkeypatch.setattr(native.nodes, "_patcher", lambda *_: patcher)
+    monkeypatch.setattr(native.nodes, "_weight_dtype", lambda _: torch.float32)
+    with (
+        mock.patch.object(native.nodes, "CachedCausalVAE", return_value=module) as constructor,
+        mock.patch.object(torch, "compile", side_effect=AssertionError("KVAE must stay eager")) as compile_model,
+    ):
+        (loaded,) = native.nodes.Kandinsky6SRVAELoader().load_vae("vae.safetensors")
+    assert constructor.call_args.kwargs["encoder_conf"]["z_channels"] == 64
+    module.init_from_ckpt.assert_called_once_with(str(checkpoint))
+    assert loaded.module is module
+    assert loaded.patcher is patcher
+    assert loaded.scaling_factor == architecture.scaling_factor
+    assert not module.training
+    assert all(not parameter.requires_grad for parameter in module.parameters())
+    compile_model.assert_not_called()
+
+
+@pytest.mark.parametrize("frames", [1, 2, 5, 9, 31])
+def test_eager_vae_keeps_default_temporal_decode_segments(native, monkeypatch, frames):
+    chunks = []
+
+    class IdentityDecoder(torch.nn.Module):
+        def forward(self, chunk, cache):
+            chunks.append(chunk.shape[2])
+            return chunk
+
+    codec = object.__new__(native.nodes.CachedCausalVAE)
+    torch.nn.Module.__init__(codec)
+    codec.conf = {"enc": {"temporal_compress_times": 4}}
+    codec.decoder = IdentityDecoder()
+    monkeypatch.setattr(codec, "make_empty_cache", lambda _: {})
+    monkeypatch.setenv("KVAE_COMPILE", "1")
+    monkeypatch.setenv("KVAE_DECODE_SEG", "32")
+    latent = torch.arange(frames * 4, dtype=torch.float32).reshape(1, 1, frames, 2, 2)
+    with mock.patch.object(torch, "compile", side_effect=AssertionError("KVAE must stay eager")):
+        decoded = codec.decode(latent).sample
+    expected = [4] * ((frames - 1) // 4)
+    if (frames - 1) % 4:
+        expected.append((frames - 1) % 4)
+    if expected:
+        expected[0] += 1
+    else:
+        expected = [1]
+    assert chunks == expected
+    torch.testing.assert_close(decoded, latent, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("available", [False, True])
+def test_optional_natten_import_requires_fused_kernels(native, monkeypatch, available):
+    backend = SimpleNamespace(HAS_LIBNATTEN=available)
+    monkeypatch.setitem(sys.modules, "natten", backend)
+    if available:
+        assert native.motion.load_natten() is backend
+    else:
+        with pytest.raises(RuntimeError, match="fused libnatten kernels are unavailable"):
+            native.motion.load_natten()
+
+
+def test_missing_natten_has_an_actionable_error(native, monkeypatch):
+    monkeypatch.setitem(sys.modules, "natten", None)
+    with pytest.raises(RuntimeError, match="natten package is not installed"):
+        native.motion.load_natten()
+
+
+def test_single_device_context_parallel_remains_a_noop(native, monkeypatch):
+    monkeypatch.setattr(native.distributed, "get_context_parallel_world_size", lambda: 1)
+    image = torch.randn(1, 3, 9, 8, 8)
+    assert native.distributed._conv_gather(image, dim=2, kernel_size=3) is image
+    assert native.distributed._conv_split(image, dim=2, kernel_size=3) is image

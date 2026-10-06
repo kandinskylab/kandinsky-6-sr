@@ -27,8 +27,8 @@ from .runtime.core.algo.latent_upscaler import (
     run_latent_upscaler,
 )
 from .runtime.core.algo.tiling_utils import TileGrid, extract_all_tiles, stitch_tiles_hanning
-from .runtime.core.components.model.compiled_kvae import CompiledCachedCausalVAE
 from .runtime.core.components.model.vae_io import cast_to_module_dtype, decode_latent_to_uint8
+from .runtime.core.components.video_kvae.cached_model import CachedCausalVAE
 from .runtime.pipeline.diffusers_bundle import (
     COMPONENT_WEIGHTS,
     kvae_architecture,
@@ -253,7 +253,7 @@ class Kandinsky6SRVAELoader:
             config = OmegaConf.load(str(config_path))
         encoder = config.encoder_params if "encoder_params" in config else config.model.encoder_params
         decoder = config.decoder_params if "decoder_params" in config else config.model.decoder_params
-        vae = CompiledCachedCausalVAE(encoder_conf=encoder, decoder_conf=decoder)
+        vae = CachedCausalVAE(encoder_conf=encoder, decoder_conf=decoder)
         vae.init_from_ckpt(str(path))
         load_device = mm.vae_device()
         vae = vae.eval().requires_grad_(False).to(dtype=_weight_dtype(load_device))

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
 from collections import defaultdict
 from typing import TYPE_CHECKING, Literal
 
@@ -305,7 +304,7 @@ class MotionCorrespondenceBlock(nn.Module):
 def load_natten() -> ModuleType:
     """Import NATTEN lazily and require its fused CUDA extension."""
     try:
-        natten = importlib.import_module("natten")
+        import natten  # noqa: PLC0415 - optional backend, loaded only when selected
     except ImportError as error:
         msg = "NATTEN backend requested, but the natten package is not installed"
         raise RuntimeError(msg) from error

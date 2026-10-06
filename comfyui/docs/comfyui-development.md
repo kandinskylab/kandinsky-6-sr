@@ -28,6 +28,9 @@ workflow metadata. Existing files are reused.
 ComfyUI owns model loading and eviction through `ModelPatcher` and
 `load_models_gpu`. DiT and KVAE stay eager; NABLA is off by default and its
 attention kernels compile only when it is enabled. Sage Attention is recommended.
+Python-pipeline KVAE compile/segment environment overrides are not used here;
+the eager codec keeps the default temporal segments. Context-parallel debug
+messages use standard Python logging instead of `CP_DEBUG`.
 Use the upscaler loader's `2x` entry for 2x/2.25x and `4x` for 4x. Disconnecting
 the latent upscaler enables the optional pixel route, not the template default.
 

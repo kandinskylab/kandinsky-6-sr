@@ -1,8 +1,11 @@
+import logging
+
 import torch
-import os
 import torch.distributed as tdi
 
 from .utils_cp_internals import get_context_parallel_rank, get_context_parallel_group, get_context_parallel_group_rank, get_context_parallel_world_size
+
+logger = logging.getLogger(__name__)
 
 
 def fake_cp_pass_from_previous_rank(input_, dim, kernel_size, stride, cache_padding):
@@ -64,11 +67,15 @@ def _drop_from_previous_rank(grad_output, dim, kernel_size, stride=1):
 
         if cp_rank < cp_world_size - 1:
             recv_buffer = torch.empty(transfer_shape, device=grad_output.device, dtype=grad_output.dtype).contiguous()
-            if os.environ.get("CP_DEBUG") == "INFO":
-                print("CP Rank %d, receive grad from %d in group %s" % (cp_world_size * group_rank + cp_rank , recv_from_rank, group.group_name if group else None), recv_buffer.shape)        
+            logger.debug(
+                "CP Rank %d, receive grad from %d in group %s: %s",
+                cp_world_size * group_rank + cp_rank,
+                recv_from_rank,
+                group.group_name if group else None,
+                recv_buffer.shape,
+            )
             req_recv = tdi.irecv(recv_buffer, recv_from_rank, group=group)
-            if os.environ.get("CP_DEBUG") == "INFO":
-                print("CP Rank %d, grad received" % (cp_world_size * group_rank + cp_rank) )
+            logger.debug("CP Rank %d, grad received", cp_world_size * group_rank + cp_rank)
         else:
             req_recv = None
 
@@ -83,8 +90,13 @@ def _drop_from_previous_rank(grad_output, dim, kernel_size, stride=1):
         grad_to_transfer = grad_output[:pad].contiguous() if cp_rank > 0 else grad_output[:(kernel_size - 1)]
         grad_output = grad_output[pad:] if cp_rank > 0 else grad_output[(kernel_size - 1):]
         if cp_rank > 0:
-            if os.environ.get("CP_DEBUG") == "INFO":
-                print("CP Rank %d, send grad to %d in group %s" % (cp_world_size * group_rank + cp_rank , send_to_rank, group.group_name if group else None), grad_to_transfer.shape)
+            logger.debug(
+                "CP Rank %d, send grad to %d in group %s: %s",
+                cp_world_size * group_rank + cp_rank,
+                send_to_rank,
+                group.group_name if group else None,
+                grad_to_transfer.shape,
+            )
             req_send = tdi.isend(grad_to_transfer, send_to_rank, group=group)
         else:
             # On rank 0 just add grads to first frame
@@ -100,7 +112,6 @@ def _drop_from_previous_rank(grad_output, dim, kernel_size, stride=1):
         #    req_send.wait()
 
         # if cp_world_size > 1:
-        #     if os.environ.get("CP_DEBUG") == "INFO":
         #         print("Rank %d, grad barrier reached" % global_rank)
         #     tdi.barrier(group=group)
     else:
@@ -146,11 +157,16 @@ def _fake_cp_pass_from_previous_rank(input_, dim, kernel_size, stride=1, cache_p
 
     if cp_rank > 0:
         recv_buffer = torch.empty(buffer_shape, device=input_.device, dtype=input_.dtype).contiguous()
-        if os.environ.get("CP_DEBUG") == "INFO":
-            print("Rank %d, receive %d from %d in group %s" % (cp_world_size * group_rank + cp_rank, recv_buffer.shape[0], recv_from_rank, group.group_name if group else None), recv_buffer.shape)
+        logger.debug(
+            "Rank %d, receive %d from %d in group %s: %s",
+            cp_world_size * group_rank + cp_rank,
+            recv_buffer.shape[0],
+            recv_from_rank,
+            group.group_name if group else None,
+            recv_buffer.shape,
+        )
         req_recv = tdi.irecv(recv_buffer, recv_from_rank, group=group)
-        if os.environ.get("CP_DEBUG") == "INFO":
-            print("Rank %d, received" % (cp_world_size * group_rank + cp_rank))
+        logger.debug("Rank %d, received", cp_world_size * group_rank + cp_rank)
     else:
         # First chunk, just replicate first point
         if cache_padding is not None:
@@ -166,8 +182,14 @@ def _fake_cp_pass_from_previous_rank(input_, dim, kernel_size, stride=1, cache_p
         req_recv = None
 
     if cp_rank < cp_world_size - 1:
-        if os.environ.get("CP_DEBUG") == "INFO":
-            print("Rank %d, send %d to %d in group %s" % (cp_world_size * group_rank + cp_rank, input_[-pad:].shape[0], send_to_rank, group.group_name if group else None), input_[-pad :].shape)
+        logger.debug(
+            "Rank %d, send %d to %d in group %s: %s",
+            cp_world_size * group_rank + cp_rank,
+            input_[-pad:].shape[0],
+            send_to_rank,
+            group.group_name if group else None,
+            input_[-pad:].shape,
+        )
         send_buffer = input_[-pad:].contiguous()
         req_send = tdi.isend(send_buffer, send_to_rank, group=group)
     else:
@@ -181,7 +203,6 @@ def _fake_cp_pass_from_previous_rank(input_, dim, kernel_size, stride=1, cache_p
     #    req_send.wait()
 
     # if cp_world_size > 1:
-    #     if os.environ.get("CP_DEBUG") == "INFO":
     #         print("Rank %d, barrier reached" % global_rank)
     #     tdi.barrier(group=group)
 
