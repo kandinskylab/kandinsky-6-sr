@@ -91,7 +91,8 @@ Several equal-shaped clips go through in one call: pass `video` as a `[B, T, 3, 
 
 ## ComfyUI
 
-The `comfyui/` folder contains the standalone **Kandinsky6 SR** extension: native ComfyUI model loaders, tiled video upscaling and a ready-to-run workflow. The Python pipeline is not a runtime dependency. Installation and usage: [comfyui/README.md](comfyui/README.md).
+For ComfyUI, install [kandinsky6-sr](https://registry.comfy.org/nodes/kandinsky6-sr) through **ComfyUI Manager**, then restart ComfyUI.
+The `comfyui/` directory contains extension source code; no manual copying is needed — see the [setup guide](comfyui/README.md).
 
 ## Inference Time on H100
 
