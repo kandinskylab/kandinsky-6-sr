@@ -101,7 +101,7 @@ Several equal-shaped clips go through in one call: pass `video` as a `[B, T, 3, 
 ## ComfyUI
 
 For ComfyUI, install [kandinsky6-sr](https://registry.comfy.org/nodes/kandinsky6-sr) through **ComfyUI Manager**, then restart ComfyUI.
-The `comfyui/` directory contains extension source code; no manual copying is needed — see the [setup guide](comfyui/README.md).
+The `comfyui/` directory contains extension source code; no manual copying is needed — see the [setup guide](comfyui/README.md) and [manual model downloads](comfyui/README.md#manual-downloads).
 
 ## Inference Time on H100
 
