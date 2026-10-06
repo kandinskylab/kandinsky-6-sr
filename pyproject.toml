@@ -113,11 +113,11 @@ target-version = "py312"
 select = ["E", "W", "F", "I", "N", "UP", "PL", "B", "ERA", "SIM"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["kandinsky_sr", "k6_vsr_comfy"]
+known-first-party = ["kandinsky_sr", "kandinsky6_vsr"]
 
 [tool.ruff.lint.per-file-ignores]
 # ComfyUI custom node packs are named after their repo folder (hyphens included).
-"ComfyUI-K6-VSR/**" = ["N999"]
+"comfyui/**" = ["N999"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

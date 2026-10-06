@@ -1,0 +1,16 @@
+# Development and test files are not part of the Registry package.
+.git/
+.github/
+tests/
+docs/
+dev/
+node.zip
+
+# Generated local caches and reports.
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
