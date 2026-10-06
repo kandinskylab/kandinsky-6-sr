@@ -1,16 +1,25 @@
 <div align="center">
+  <img src="assets/promo.webp" width="100%">
+</div>
+
+<br>
+
+<div align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/Kandinsky_LOGO_6_Horizontal_white.png">
   <img src="assets/Kandinsky_LOGO_6_Horizontal_black.png" width="60%">
 </picture>
 </div>
 
+<br>
+
 <div align="center">
 
-<a href="https://huggingface.co/spaces/kandinskylab/Kandinsky-6.0-VSR-Demo"><img alt="Demo: Kandinsky-6.0-VSR-Demo Space" src="https://img.shields.io/badge/%F0%9F%A4%97%20Demo-Kandinsky--6.0--VSR--Demo-059669?style=for-the-badge&labelColor=1a1a2e"></a>
-
-<a href="https://huggingface.co/kandinskylab/Kandinsky-6.0-VSR-distilled2steps-5s-Diffusers"><img alt="SR distilled 2 steps: Kandinsky-6.0-VSR-distilled2steps-5s-Diffusers" src="https://img.shields.io/badge/%F0%9F%A4%97%20SR%20distilled%202%20steps-Kandinsky--6.0--VSR--distilled2steps--5s--Diffusers-7c3aed?style=for-the-badge&labelColor=1a1a2e"></a>
-<a href="https://huggingface.co/kandinskylab/Kandinsky-6.0-VSR-5s-Diffusers"><img alt="SR flow matching: Kandinsky-6.0-VSR-5s-Diffusers" src="https://img.shields.io/badge/%F0%9F%A4%97%20SR%20flow%20matching-Kandinsky--6.0--VSR--5s--Diffusers-c026d3?style=for-the-badge&labelColor=1a1a2e"></a>
+<a href="https://kandinskylab.ai/"><img alt="KandinskyLab" src="https://img.shields.io/badge/KandinskyLab-76E0B7?style=for-the-badge"></a>
+<a href="https://arxiv.org/abs/2610.05608"><img alt="Report" src="https://img.shields.io/badge/Report-9C2731?style=for-the-badge"></a>
+<a href="https://github.com/kandinskylab/kandinsky-6"><img alt="Kandinsky 6" src="https://img.shields.io/badge/Kandinsky%206-181717?style=for-the-badge&logo=github&logoColor=white"></a>
+<a href="https://huggingface.co/spaces/kandinskylab/Kandinsky-6.0-VSR-Demo"><img alt="HF Demo" src="https://img.shields.io/badge/HF%20Demo-D9622B?style=for-the-badge"></a>
+<a href="https://huggingface.co/collections/kandinskylab/kandinsky-60-vsr"><img alt="Diffusers" src="https://img.shields.io/badge/Diffusers-F8D44E?style=for-the-badge"></a>
 
 </div>
 
