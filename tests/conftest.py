@@ -12,7 +12,7 @@ import pytest
 import torch
 from safetensors.torch import save_file
 
-COMFYUI_PACK_DIR = Path(__file__).resolve().parent.parent / "ComfyUI-K6-VSR"
+COMFYUI_PACK_DIR = Path(__file__).resolve().parent.parent / "comfyui"
 
 if str(COMFYUI_PACK_DIR) not in sys.path:
     sys.path.insert(0, str(COMFYUI_PACK_DIR))
