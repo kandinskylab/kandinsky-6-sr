@@ -1,7 +1,7 @@
 [project]
 name = "kandinsky6-sr"
 description = "ComfyUI nodes for Kandinsky 6 video super-resolution (x2 / x2.25 / x4, tiled latent upscaler + DiT)."
-version = "0.1.1"
+version = "0.1.2"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 dependencies = [
