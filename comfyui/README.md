@@ -71,6 +71,3 @@ as the template does.
 Turn it on to use sparse NABLA attention; its first run compiles kernels and
 subsequent runs reuse them. Compare runtime and output quality for your video.
 DiT and KVAE are not compiled in either mode.
-
-Validation, packaging and manual publishing details:
-[developer notes](https://github.com/kandinskylab/kandinsky-6-sr/blob/main/comfyui/docs/comfyui-development.md).
