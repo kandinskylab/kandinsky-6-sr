@@ -45,9 +45,35 @@ Existing files and configured extra model paths are reused. Nothing is downloade
 during extension install or startup. Allow enough disk space for the HF weights.
 
 For gated/private models, obtain access and run `hf auth login` on the ComfyUI
-server first. The
-[HF bundle](https://huggingface.co/kandinskylab/Kandinsky-6.0-VSR-distilled2steps-5s-Diffusers)
-can also be downloaded manually, preserving its folders and JSON files.
+server first.
+
+### Manual downloads
+
+Download these eight files separately if you prefer not to use the button.
+All destinations below are relative to this folder in your **ComfyUI directory**:
+
+```text
+models/diffusion_models/Kandinsky-6.0-VSR-distilled2steps-5s-Diffusers/
+```
+
+| Download | Destination inside that folder |
+| --- | --- |
+| [SR DiT weights](https://huggingface.co/kandinskylab/Kandinsky-6.0-VSR-distilled2steps-5s-Diffusers/resolve/main/transformer/diffusion_pytorch_model.safetensors) | `transformer/diffusion_pytorch_model.safetensors` |
+| [SR DiT config](https://huggingface.co/kandinskylab/Kandinsky-6.0-VSR-distilled2steps-5s-Diffusers/resolve/main/transformer/config.json) | `transformer/config.json` |
+| [KVAE weights](https://huggingface.co/kandinskylab/Kandinsky-6.0-VSR-distilled2steps-5s-Diffusers/resolve/main/vae/diffusion_pytorch_model.safetensors) | `vae/diffusion_pytorch_model.safetensors` |
+| [KVAE config](https://huggingface.co/kandinskylab/Kandinsky-6.0-VSR-distilled2steps-5s-Diffusers/resolve/main/vae/config.json) | `vae/config.json` |
+| [Latent-upscaler weights — both 2x and 4x](https://huggingface.co/kandinskylab/Kandinsky-6.0-VSR-distilled2steps-5s-Diffusers/resolve/main/latent_upscaler/diffusion_pytorch_model.safetensors) | `latent_upscaler/diffusion_pytorch_model.safetensors` |
+| [Latent-upscaler config](https://huggingface.co/kandinskylab/Kandinsky-6.0-VSR-distilled2steps-5s-Diffusers/resolve/main/latent_upscaler/config.json) | `latent_upscaler/config.json` |
+| [Model index](https://huggingface.co/kandinskylab/Kandinsky-6.0-VSR-distilled2steps-5s-Diffusers/resolve/main/model_index.json) | `model_index.json` |
+| [Scheduler config](https://huggingface.co/kandinskylab/Kandinsky-6.0-VSR-distilled2steps-5s-Diffusers/resolve/main/scheduler/scheduler_config.json) | `scheduler/scheduler_config.json` |
+
+Create the subfolders and keep all JSON configs at the paths shown. The single
+latent-upscaler weights file contains both scales; no separate 4x download is needed.
+For another drive, configure an extra `diffusion_models` path or use a symbolic
+link (directory junction on Windows), preserving the bundle's folder layout.
+Restart ComfyUI after placing the files, then select them as shown below.
+Standalone SR does not need the generation models, text encoders or audio VAE;
+it preserves the input video's audio.
 
 ## Run
 
