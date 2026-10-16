@@ -183,7 +183,7 @@ def test_warmup_encodes_the_padded_source(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setattr(warmup, "encode_lq_video_to_lr_latent", encode)
     monkeypatch.setattr(warmup, "upscale_lr_latent_tile", upscale_tile)
-    monkeypatch.setattr(warmup, "generate_sample_sr", lambda **_kwargs: None)
+    monkeypatch.setattr(warmup, "run_stages", lambda **_kwargs: None)
     monkeypatch.setattr(warmup.torch.cuda, "empty_cache", lambda: None)
     components = SimpleNamespace(
         dit=object(),

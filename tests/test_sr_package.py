@@ -192,7 +192,7 @@ def test_sr_stage_orchestrator_calls_reusable_stages_in_order(monkeypatch):
     assert result.shape == (1, 3, 1, 1, 1)
 
 
-def test_sr_tile_batches_keep_dit_and_vae_resident(monkeypatch):
+def test_sr_tile_batches_delegate_residency_to_native_stages(monkeypatch):
     class RecordingOffload:
         def __init__(self):
             self.events = []
@@ -210,6 +210,7 @@ def test_sr_tile_batches_keep_dit_and_vae_resident(monkeypatch):
     seeds = []
 
     def run_stages(**kwargs):
+        assert kwargs["offload"] is offload
         calls.append(kwargs["lq_videos"])
         seeds.append(kwargs["seed"])
         return torch.zeros(len(kwargs["lq_videos"]), 1, 1, 1, 1)
@@ -242,7 +243,7 @@ def test_sr_tile_batches_keep_dit_and_vae_resident(monkeypatch):
     assert len(outputs) == BATCH_SIZE * tile_count
     assert len(calls) == tile_count
     assert seeds == [42, 43]
-    assert offload.events == [("enter", ("dit", "vae")), ("exit", ("dit", "vae"))]
+    assert offload.events == []  # Native stages, not the tile loop, own residency.
 
 
 def test_kvae_bridge_reencodes_source_latents_before_lu(monkeypatch):

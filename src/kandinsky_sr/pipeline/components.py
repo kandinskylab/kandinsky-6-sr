@@ -737,7 +737,7 @@ def load_sr_components(  # noqa: PLR0913
     instruct_type_override: str | None = "noise",
     lu_load_scales: tuple[str, ...] | None = None,
 ) -> SRComponents:
-    """Load DiT, compiled VAE, and frozen latent upscaler onto a single GPU.
+    """Load DiT, compiled VAE and LU on a common storage device (CPU or CUDA).
 
     The training config of the checkpoint carries ``vae.name``
     (``"video-kvae"``), and the VAE class and compression factors follow from
@@ -751,7 +751,7 @@ def load_sr_components(  # noqa: PLR0913
         vae_path: A bundle or its ``vae`` component, a video-kvae sidecar
             prefix, local checkout, or repo id. ``None`` takes the VAE of the
             checkpoint's bundle (required for a native checkpoint).
-        device: Target CUDA device (e.g. ``cuda:0``).
+        device: Storage device, e.g. ``cpu`` for offload or ``cuda:0`` for resident models.
         latent_upscaler_config: A bundle or its ``latent_upscaler`` component,
             an LU bank YAML (or its dir / repo id); ``"none"`` disables the
             LU, ``None`` takes the upscalers of the checkpoint's bundle.

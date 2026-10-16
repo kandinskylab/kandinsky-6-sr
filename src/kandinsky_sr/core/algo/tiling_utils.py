@@ -253,3 +253,41 @@ def stitch_tiles_hanning(
             tile_idx += 1
 
     return pred_acc / weight_acc.clamp(min=1e-6)
+
+
+def spatial_decode_spans(width: int, splits: int, overlap: int) -> list[tuple[int, int]]:
+    """Split latent columns into overlapping vertical decoder strips."""
+    if splits <= 1:
+        return [(0, width)]
+    if splits > width:
+        raise ValueError(f"Cannot split {width} latent columns into {splits} strips")
+    if overlap < 0:
+        raise ValueError("overlap must not be negative")
+    base = width // splits
+    return [(0 if i == 0 else max(0, i * base - overlap),
+             width if i == splits - 1 else min(width, (i + 1) * base + overlap))
+            for i in range(splits)]
+
+
+def blend_spatial_decode(parts: list[torch.Tensor], spans: list[tuple[int, int]],
+                         width: int, overlap: int) -> torch.Tensor:
+    """Cross-fade decoded strips with normalized linear overlap weights."""
+    if len(parts) != len(spans):
+        raise ValueError("parts and spans must have the same length")
+    if len(parts) == 1:
+        return parts[0]
+    scale = parts[0].shape[-1] // (spans[0][1] - spans[0][0])
+    canvas = parts[0].float().new_zeros(*parts[0].shape[:-1], width * scale)
+    weights = canvas.new_zeros(1, *([1] * (canvas.dim() - 2)), width * scale)
+    fade = overlap * scale
+    for raw, (start, end) in zip(parts, spans, strict=True):
+        part = raw.float()
+        ramp = part.new_ones(part.shape[-1])
+        if fade > 0:
+            if start > 0:
+                ramp[:fade] = torch.linspace(0.0, 1.0, fade, device=part.device)
+            if end < width:
+                ramp[-fade:] = torch.linspace(1.0, 0.0, fade, device=part.device)
+        canvas[..., start * scale:end * scale] += part * ramp
+        weights[..., start * scale:end * scale] += ramp
+    return (canvas / weights.clamp_min(torch.finfo(weights.dtype).tiny)).round().clamp(0, 255).to(parts[0].dtype)

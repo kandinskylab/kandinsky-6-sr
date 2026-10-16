@@ -44,7 +44,7 @@ def _patch_loaders(monkeypatch: pytest.MonkeyPatch, *, latent_upscaler: object |
     seen: dict[str, object] = {}
     components = SimpleNamespace(
         dit=object(),
-        vae=object(),
+        vae=SimpleNamespace(decode_segment_frames=0),
         latent_upscaler=latent_upscaler,
         sr_params=SimpleNamespace(visual_size=[512], scale_factor={512: [1.0, 1.0, 1.0]}),
         cached_text_embeds=None,
@@ -140,3 +140,37 @@ def test_bare_cuda_device_resolves_to_the_current_index(monkeypatch: pytest.Monk
     assert components_module.resolve_cuda_device("cuda") == torch.device("cuda", 1)
     assert components_module.resolve_cuda_device("cuda:3") == torch.device("cuda", 3)
     assert components_module.resolve_cuda_device("cpu") == torch.device("cpu")
+
+
+@pytest.mark.parametrize("strategy", ["module", "block"])
+def test_offload_loads_all_components_and_cold_lu_on_cpu(monkeypatch, strategy):
+    seen = _patch_loaders(monkeypatch, latent_upscaler=object())
+    selected_devices = []
+    monkeypatch.setattr(torch.cuda, "set_device", selected_devices.append)
+    handle = RecordingOffload()
+    handle.strategy = strategy
+    config = SRConfig(enabled=True, checkpoint_path="/bundle", lu_load_scales=("2x",),
+                      decode_segment_frames=4, decode_spatial_splits=2)
+    factory.load_sr_pipeline(config, "cuda:3", offload=handle)
+    assert seen["components_kwargs"]["device"] == "cpu"
+    assert seen["components_kwargs"]["lu_load_scales"] == ("2x",)
+    assert selected_devices == [torch.device("cuda:3")]
+    assert seen["pipeline_kwargs"]["device"] == "cuda:3"
+    assert seen["pipeline_kwargs"]["decode_spatial_splits"] == config.decode_spatial_splits
+    assert seen["components"].vae.decode_segment_frames == config.decode_segment_frames
+
+
+def test_resident_load_keeps_requested_device(monkeypatch):
+    seen = _patch_loaders(monkeypatch, latent_upscaler=None)
+    factory.load_sr_pipeline(SRConfig(enabled=True, checkpoint_path="/bundle"), "cuda:2")
+    assert seen["components_kwargs"]["device"] == "cuda:2"
+
+
+def test_block_offload_rejects_magi_before_loading(monkeypatch):
+    seen = _patch_loaders(monkeypatch, latent_upscaler=None)
+    handle = RecordingOffload()
+    handle.strategy = "block"
+    with pytest.raises(ValueError, match="Magi graphs"):
+        factory.load_sr_pipeline(SRConfig(enabled=True, checkpoint_path="/bundle", vae_backend="magi"),
+                                 "cuda:0", offload=handle)
+    assert "components_kwargs" not in seen
