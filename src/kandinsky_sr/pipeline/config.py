@@ -72,6 +72,10 @@ class SRConfig(BaseModel):
     overlap: float = Field(default=0.20, ge=0.0, lt=1.0)
     tiles_batch_size: int = Field(default=1, gt=0)
     seed: int = 42
+    # KVAE decoder memory controls; zero segment size preserves the backend default.
+    decode_segment_frames: int = Field(default=0, ge=0)
+    decode_spatial_splits: int = Field(default=1, ge=1)
+    decode_spatial_overlap: int = Field(default=4, ge=0)
     # --- Latent upscaler loading ---
     # Bank entries (by target_scale, e.g. ["2x"]) loaded eagerly at startup;
     # None = every entry. Unlisted entries lazy-load on first use.

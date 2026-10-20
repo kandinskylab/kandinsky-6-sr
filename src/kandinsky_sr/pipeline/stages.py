@@ -23,7 +23,12 @@ from kandinsky_sr.core.algo.latent_upscaler import (
     latent_upscaler_for_scale,
     latent_upscaler_scale,
 )
-from kandinsky_sr.core.algo.tiling_utils import extract_all_tiles, stitch_tiles_hanning
+from kandinsky_sr.core.algo.tiling_utils import (
+    blend_spatial_decode,
+    extract_all_tiles,
+    spatial_decode_spans,
+    stitch_tiles_hanning,
+)
 from kandinsky_sr.core.algo.utils import (
     _build_initial_latent,
     _encode_lq_videos,
@@ -305,16 +310,24 @@ def vae_decode(  # noqa: PLR0913
     height: int,
     width: int,
     vae_decode_batch: bool = False,
+    spatial_splits: int = 1,
+    spatial_overlap: int = 4,
 ) -> torch.Tensor:
     """ Decode denoised SR latents into ``[batch, 3, T, H, W]`` uint8 frames
     """
     with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
         all_latents = latent_visual.reshape(batch_size, duration, height, width, -1)
         all_latents = (all_latents / vae.config.scaling_factor).permute(0, 4, 1, 2, 3)  # type: ignore[attr-defined]
-        if vae_decode_batch:
-            return decode_latent_to_uint8(vae, all_latents)
-        decoded = [decode_latent_to_uint8(vae, all_latents[i : i + 1]) for i in range(batch_size)]
-        return torch.cat(decoded, dim=0)
+        def decode(latents):
+            if vae_decode_batch:
+                return decode_latent_to_uint8(vae, latents)
+            return torch.cat([decode_latent_to_uint8(vae, latents[i : i + 1])
+                              for i in range(batch_size)], dim=0)
+        if spatial_splits <= 1:
+            return decode(all_latents)
+        spans = spatial_decode_spans(width, spatial_splits, spatial_overlap)
+        parts = [decode(all_latents[..., start:end]) for start, end in spans]
+        return blend_spatial_decode(parts, spans, width, spatial_overlap)
 
 
 @torch.no_grad()
@@ -349,59 +362,74 @@ def run_stages(  # noqa: PLR0913
     stage: StageCallback | None = None,
     progress_callback: Callable[[int], Any] | None = None,
     scheduler: Any | None = None,
+    decode_spatial_splits: int = 1,
+    decode_spatial_overlap: int = 4,
+    offload: OffloadHandle | None = None,
 ) -> torch.Tensor:
-    """Run the four reusable SR stages for one tile batch."""
+    """Run SR with disjoint VAE/DiT residency when an offload handle is supplied."""
     piflow_params = piflow_params or _scheduler_piflow_params(scheduler)
     piflow_params = piflow_params or getattr(dit, "piflow_params", None)
+    offload = offload if offload is not None else NoOpOffload()
 
-    with _stage_context(stage, "prepare_latents"):
-        latent_state = prepare_latents(
-            dit=dit,
-            vae=vae,
-            device=device,
-            lq_videos=lq_videos,
-            lq_latents=lq_latents,
-            n_samples=n_samples,
-            seed=seed,
-            lq_noise_scale=lq_noise_scale,
-            lq_noise_type=lq_noise_type,
-            lq_channel_noise_scale=lq_channel_noise_scale,
-            anchor_latents=anchor_latents,
-            anchor_masks=anchor_masks,
-            anchor_free=anchor_free,
-        )
+    # Pixel-input tiles need a VAE encode first. Do it before bringing DiT
+    # weights to CUDA; prepare_latents can then consume exactly the same latent.
+    if lq_latents is None and lq_videos is not None:
+        with _stage_context(stage, "vae_encode"), offload.use("vae"):
+            lq_latents = _encode_lq_videos(lq_videos, vae, device)
+        n_samples = len(lq_videos)
+        lq_videos = None
 
-    with _stage_context(stage, "text_encode"):
-        text_state = text_encode(
-            dit=dit,
-            batch_size=latent_state.batch_size,
-            device=device,
-            text_embedder=text_embedder,
-            cached_text_embeds=cached_text_embeds,
-        )
+    with offload.use("dit"):
+        with _stage_context(stage, "prepare_latents"):
+            latent_state = prepare_latents(
+                dit=dit,
+                vae=vae,
+                device=device,
+                lq_videos=lq_videos,
+                lq_latents=lq_latents,
+                n_samples=n_samples,
+                seed=seed,
+                lq_noise_scale=lq_noise_scale,
+                lq_noise_type=lq_noise_type,
+                lq_channel_noise_scale=lq_channel_noise_scale,
+                anchor_latents=anchor_latents,
+                anchor_masks=anchor_masks,
+                anchor_free=anchor_free,
+            )
 
-    with _stage_context(stage, "denoise"):
-        latent_visual = denoise(
-            dit=dit,
-            latent_state=latent_state,
-            text_state=text_state,
-            scale_factor=scale_factor,
-            num_steps=num_steps,
-            guidance_weight=guidance_weight,
-            scheduler_scale=scheduler_scale,
-            device=device,
-            tp_mesh=tp_mesh,
-            lq_noise_scale=lq_noise_scale,
-            cap_noise_timestep=cap_noise_timestep,
-            prediction_target=prediction_target,
-            channelcat_drop_threshold=channelcat_drop_threshold,
-            rfg_scale=rfg_scale,
-            piflow_params=piflow_params,
-            progress_callback=progress_callback,
-            scheduler=scheduler,
-        )
+        with _stage_context(stage, "text_encode"):
+            text_state = text_encode(
+                dit=dit,
+                batch_size=latent_state.batch_size,
+                device=device,
+                text_embedder=text_embedder,
+                cached_text_embeds=cached_text_embeds,
+            )
 
-    with _stage_context(stage, "vae_decode"):
+        with _stage_context(stage, "denoise"):
+            latent_visual = denoise(
+                dit=dit,
+                latent_state=latent_state,
+                text_state=text_state,
+                scale_factor=scale_factor,
+                num_steps=num_steps,
+                guidance_weight=guidance_weight,
+                scheduler_scale=scheduler_scale,
+                device=device,
+                tp_mesh=tp_mesh,
+                lq_noise_scale=lq_noise_scale,
+                cap_noise_timestep=cap_noise_timestep,
+                prediction_target=prediction_target,
+                channelcat_drop_threshold=channelcat_drop_threshold,
+                rfg_scale=rfg_scale,
+                piflow_params=piflow_params,
+                progress_callback=progress_callback,
+                scheduler=scheduler,
+            )
+
+    # Only the denoised activation crosses this boundary; DiT weights have
+    # been restored before decoder allocation. No nested offload contexts.
+    with _stage_context(stage, "vae_decode"), offload.use("vae"):
         return vae_decode(
             vae=vae,
             latent_visual=latent_visual,
@@ -410,6 +438,8 @@ def run_stages(  # noqa: PLR0913
             height=latent_state.height,
             width=latent_state.width,
             vae_decode_batch=vae_decode_batch,
+            spatial_splits=decode_spatial_splits,
+            spatial_overlap=decode_spatial_overlap,
         )
 
 
@@ -487,8 +517,8 @@ def _run_tile_batches(  # noqa: PLR0913
 ) -> list[torch.Tensor]:
     """Run the shared batched sampler loop for latent or pixel tile inputs.
 
-    DiT and SR VAE stay resident for the complete tile loop. Only the optional
-    latent-upscaler is streamed per chunk.
+    Native stages own disjoint residency windows. A custom sampler keeps its
+    legacy DiT+VAE window, but never overlaps it with latent-upscaler loading.
     """
     outputs: list[torch.Tensor] = []
     sampler = getattr(sr_components, "sampler", None)
@@ -498,51 +528,54 @@ def _run_tile_batches(  # noqa: PLR0913
         piflow_params["nfe"] if piflow_params is not None else
         run_config.num_steps - 1
     )
-    with offload.use("dit", "vae"):
-        for start in range(0, len(tile_inputs), run_config.tiles_batch_size):
-            raw_chunk = tile_inputs[start : start + run_config.tiles_batch_size]
-            chunk = raw_chunk
-            if prepare_chunk is not None:
-                with _stage_context(stage, "latent_upscaler"), offload.use("latent_upscaler"):
-                    chunk = prepare_chunk(raw_chunk)
+    for start in range(0, len(tile_inputs), run_config.tiles_batch_size):
+        raw_chunk = tile_inputs[start : start + run_config.tiles_batch_size]
+        chunk = raw_chunk
+        if prepare_chunk is not None:
+            with _stage_context(stage, "latent_upscaler"), offload.use("latent_upscaler"):
+                chunk = prepare_chunk(raw_chunk)
 
-            input_kwargs: dict[str, Any]
-            if prepare_chunk is None:
-                input_kwargs = {"lq_videos": chunk}
-            else:
-                input_kwargs = {
-                    "lq_latents": torch.cat(chunk, dim=0),
-                    "n_samples": len(raw_chunk),
-                }
-            kwargs = _generate_kwargs(sr_components, run_config, params, scale_factor, **input_kwargs)
-            # ``tile_inputs`` is tile-major for the native batch path. Advance
-            # the seed once per tile, not once per flattened sample batch, so
-            # batched and independent runs use the same tile seeds.
-            kwargs["seed"] = run_config.seed + start // sample_batch_size
-            chunk_progress = (
-                _scale_progress_callback(progress_callback, len(raw_chunk))
-                if progress_callback is not None
-                else None
-            )
+        input_kwargs: dict[str, Any]
+        if prepare_chunk is None:
+            input_kwargs = {"lq_videos": chunk}
+        else:
+            input_kwargs = {
+                "lq_latents": torch.cat(chunk, dim=0),
+                "n_samples": len(raw_chunk),
+            }
+        kwargs = _generate_kwargs(sr_components, run_config, params, scale_factor, **input_kwargs)
+        # ``tile_inputs`` is tile-major for the native batch path. Advance
+        # the seed once per tile, not once per flattened sample batch, so
+        # batched and independent runs use the same tile seeds.
+        kwargs["seed"] = run_config.seed + start // sample_batch_size
+        chunk_progress = (
+            _scale_progress_callback(progress_callback, len(raw_chunk))
+            if progress_callback is not None
+            else None
+        )
 
-            if sampler is None:
-                outputs.extend(
-                    _as_tiles(
-                        run_stages(
-                            **kwargs,
-                            piflow_params=piflow_params,
-                            stage=stage,
-                            progress_callback=chunk_progress,
-                            scheduler=scheduler,
-                        )
+        if sampler is None:
+            outputs.extend(
+                _as_tiles(
+                    run_stages(
+                        **kwargs,
+                        piflow_params=piflow_params,
+                        stage=stage,
+                        progress_callback=chunk_progress,
+                        scheduler=scheduler,
+                            decode_spatial_splits=getattr(run_config, "decode_spatial_splits", 1),
+                            decode_spatial_overlap=getattr(run_config, "decode_spatial_overlap", 4),
+                        offload=offload,
                     )
                 )
-            else:
-                if _sampler_accepts_stage(sampler):
-                    kwargs["stage"] = stage
+            )
+        else:
+            if _sampler_accepts_stage(sampler):
+                kwargs["stage"] = stage
+            with offload.use("dit", "vae"):
                 outputs.extend(_as_tiles(sampler(**kwargs)))
-                if chunk_progress is not None:
-                    chunk_progress(progress_steps)
+            if chunk_progress is not None:
+                chunk_progress(progress_steps)
     return outputs
 
 

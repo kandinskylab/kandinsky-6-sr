@@ -80,6 +80,8 @@ class RunConfig:
     # Minimum overlap between neighbouring tiles, fraction of the tile size.
     overlap: float = 0.20
     tiles_batch_size: int = 1
+    decode_spatial_splits: int = 1
+    decode_spatial_overlap: int = 4
     resolution_scale: TilingScale = 4
 
     def __post_init__(self) -> None:
@@ -545,6 +547,8 @@ class Kandinsky6SRPipeline:
         resolution_scale: ResolutionScale = 4,
         overlap: float = 0.20,
         tiles_batch_size: int = 1,
+        decode_spatial_splits: int = 1,
+        decode_spatial_overlap: int = 4,
         cached_text_embeds: dict[str, torch.Tensor] | None = None,
         sampler: Callable[..., torch.Tensor] | None = None,
         spatial_factor: int | None = None,
@@ -563,6 +567,8 @@ class Kandinsky6SRPipeline:
         self.resolution_scale = resolution_scale
         self.overlap = overlap
         self.tiles_batch_size = tiles_batch_size
+        self.decode_spatial_splits = decode_spatial_splits
+        self.decode_spatial_overlap = decode_spatial_overlap
         self.cached_text_embeds = cached_text_embeds
         self.sampler = sampler
         self.spatial_factor = spatial_factor
@@ -637,6 +643,8 @@ class Kandinsky6SRPipeline:
             overlap=self.overlap if overlap is None else overlap,
             tiles_batch_size=self.tiles_batch_size if tiles_batch_size is None else tiles_batch_size,
             resolution_scale=tiling_scale,
+            decode_spatial_splits=self.decode_spatial_splits,
+            decode_spatial_overlap=self.decode_spatial_overlap,
         )
 
         has_latent_upscaler = latent_upscaler_for_scale(self.latent_upscaler, run_config.resolution_scale) is not None

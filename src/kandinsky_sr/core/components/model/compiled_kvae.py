@@ -311,6 +311,8 @@ class CompiledCachedCausalVAE(CachedCausalVAE):
         with torch._dynamo.utils.disable_cache_limit():  # noqa: SLF001 — no public API for this
             return super().encode(x, seg_len)
 
+    decode_segment_frames: int = 0
+
     def decode(self, z: torch.Tensor, split_list: list[int] | None = None):  # noqa: ANN201
         """Segment-cached decode under a lifted dynamo cache limit.
 
@@ -322,7 +324,8 @@ class CompiledCachedCausalVAE(CachedCausalVAE):
         """
         if split_list is None:
             tc = int(self.conf["enc"]["temporal_compress_times"])
-            split_list = decode_split_list(z.shape[2], tc, int(os.environ.get("KVAE_DECODE_SEG", "16")))
+            segment = self.decode_segment_frames or int(os.environ.get("KVAE_DECODE_SEG", "16"))
+            split_list = decode_split_list(z.shape[2], tc, segment)
         with torch._dynamo.utils.disable_cache_limit():  # noqa: SLF001 — no public API for this
             return super().decode(z, split_list)
 

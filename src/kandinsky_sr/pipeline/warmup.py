@@ -19,9 +19,10 @@ from loguru import logger
 
 from kandinsky_sr import constants
 from kandinsky_sr.constants import SPARSE_RECOMPILE_LIMIT
+from kandinsky_sr.core.algo.tiling_utils import spatial_decode_spans
 from kandinsky_sr.core.algo.train_utils import get_sparse_params
-from kandinsky_sr.core.algo.utils import generate_sample_sr
 from kandinsky_sr.core.components.model.nn import MultiheadSelfAttention
+from kandinsky_sr.core.utils.offload import NoOpOffload
 from kandinsky_sr.pipeline.sr_pipeline import (
     _closest_base_resolution,
     _tile_geometry,
@@ -29,6 +30,7 @@ from kandinsky_sr.pipeline.sr_pipeline import (
     latent_path_padding,
     upscale_lr_latent_tile,
 )
+from kandinsky_sr.pipeline.stages import run_stages
 
 
 def silence_symbolic_shape_warnings() -> None:
@@ -185,10 +187,13 @@ def compile_vae_decode(components: Any, device: int | str, bases: Sequence[tuple
         logger.info("Compiling VAE decode for base {}x{}: {} frames at {}x{} latent", base_h, base_w, t_latent, h, w)
         # Exactly what the real path feeds the decoder: channels_last_3d under
         # bf16 autocast — the compiled artifact asserts those strides.
-        z = torch.zeros(1, dit.in_visual_dim, t_latent, h, w, device=device, dtype=dtype)
-        z = z.to(memory_format=torch.channels_last_3d)
-        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            vae.decode(z)
+        spans = spatial_decode_spans(w, getattr(vae, "decode_spatial_splits", 1),
+                                    getattr(vae, "decode_spatial_overlap", 4))
+        for width in sorted({end - start for start, end in spans}):
+            z = torch.zeros(1, dit.in_visual_dim, t_latent, h, width, device=device, dtype=dtype)
+            z = z.to(memory_format=torch.channels_last_3d)
+            with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                vae.decode(z)
     torch.cuda.empty_cache()
 
 
@@ -220,6 +225,7 @@ def warmup_target_pass(  # noqa: PLR0913
             encoded once and discarded so the whole-clip KVAE encode is warm too.
     """
     sr_params = components.sr_params
+    offload = getattr(components, "offload", None) or NoOpOffload()
     visual_size = int(sr_params.visual_size[0])
     if lu is not None:
         # The real run pads the source for the latent path; warm the shapes it will actually see.
@@ -231,7 +237,8 @@ def warmup_target_pass(  # noqa: PLR0913
     )
     if lu is not None and lq_video is not None:
         logger.info("Warmup: throwaway whole-clip vae.encode ({}x{})", *source_hw)
-        encode_lq_video_to_lr_latent(lq_video, components.vae, run_config.device)
+        with torch.no_grad(), offload.use("vae"):
+            encode_lq_video_to_lr_latent(lq_video, components.vae, run_config.device)
 
     if lu is not None:
         t_latent = (num_pixel_frames - 1) // constants.VAE_TEMPORAL_FACTOR + 1
@@ -239,17 +246,18 @@ def warmup_target_pass(  # noqa: PLR0913
         tile = torch.randn(
             t_latent, channels, tile_hw[0] // constants.VAE_SPATIAL_FACTOR, tile_hw[1] // constants.VAE_SPATIAL_FACTOR
         )
-        lq_kwargs: dict[str, Any] = {
-            "lq_latents": upscale_lr_latent_tile(tile, lu, components.vae, run_config.device),
-            "n_samples": 1,
-        }
+        with torch.no_grad(), offload.use("latent_upscaler"):
+            lq_kwargs: dict[str, Any] = {
+                "lq_latents": upscale_lr_latent_tile(tile, lu, components.vae, run_config.device),
+                "n_samples": 1,
+            }
     else:
         lq_kwargs = {"lq_videos": [torch.rand(num_pixel_frames, base_h, base_w, 3) * 255.0]}
     logger.info(
         "Warmup: one throwaway tile at base {}x{} ({} path)", base_h, base_w, "LU" if lu is not None else "pixel"
     )
     with torch.no_grad():
-        generate_sample_sr(
+        run_stages(
             **lq_kwargs,
             dit=components.dit,
             vae=components.vae,
@@ -267,6 +275,9 @@ def warmup_target_pass(  # noqa: PLR0913
             lq_channel_noise_scale=sr_params.lq_channel_noise_scale,
             cap_noise_timestep=sr_params.cap_noise_timestep,
             cached_text_embeds=components.cached_text_embeds,
+            decode_spatial_splits=getattr(run_config, "decode_spatial_splits", 1),
+            decode_spatial_overlap=getattr(run_config, "decode_spatial_overlap", 4),
+            offload=offload,
         )
     torch.cuda.empty_cache()
 

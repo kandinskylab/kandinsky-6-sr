@@ -132,6 +132,9 @@ Schema: `src/kandinsky_sr/pipeline/config.py::SRConfig`. The same section works 
 | `seed` | `42` | Noise seed (per-tile-chunk deterministic). |
 | `tiles_batch_size` | `1` | Tiles per DiT call; larger = better GPU utilisation, more peak memory. |
 | `overlap` | `0.20` | Minimum overlap between neighbouring tiles as a fraction of the tile size; the grid uses the fewest tiles with uniform overlap ≥ this. |
+| `decode_segment_frames` | `0` (backend default) | Pixel frames per temporal segment of the KVAE decode (`torch` backend only). Smaller segments cut decoder peak memory; `0` keeps the backend default (`KVAE_DECODE_SEG`, 16). |
+| `decode_spatial_splits` | `1` | Vertical strips the KVAE decode is split into; each strip is decoded on its own and the strips are cross-faded. `1` decodes the whole tile at once; `2` roughly halves decoder peak memory. |
+| `decode_spatial_overlap` | `4` | Latent columns of overlap between neighbouring decode strips (16 px per column); the cross-fade hides the strip seams. Ignored with `decode_spatial_splits: 1`. |
 | `lu_load_scales` | `null` (all) | Bank entries (by `target_scale`, e.g. `["2x"]`) loaded eagerly at startup; unlisted entries lazy-load on first use. |
 | `target_resolution` | `null` (raw) | Downscale the SR result to a delivery tier (`hd` / `fullhd` / `2k`) or an explicit `WxH`. |
 | `target_resize_mode` | `fit` | `fit` preserves aspect exactly; `exact` resizes to the precise bucket dimensions. |
