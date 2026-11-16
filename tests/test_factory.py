@@ -64,6 +64,9 @@ def _patch_loaders(monkeypatch: pytest.MonkeyPatch, *, latent_upscaler: object |
     # The factory binds both names at import time, so patch them where they are used.
     monkeypatch.setattr(factory, "load_sr_components", fake_load_components)
     monkeypatch.setattr(factory, "Kandinsky6SRPipeline", fake_pipeline)
+    # The default nabla is cutedsl. Hide flash-attn-4 so a load does not
+    # replace MultiheadSelfAttention on this machine.
+    monkeypatch.setattr("kandinsky_sr.core.components.model.nabla_cutedsl.fa4_installed", lambda: False)
     monkeypatch.setattr(warmup_module, "compile_vae_decode", fake_compile)
     monkeypatch.setattr(
         warmup_module,
@@ -150,7 +153,7 @@ def test_offload_loads_all_components_and_cold_lu_on_cpu(monkeypatch, strategy):
     handle = RecordingOffload()
     handle.strategy = strategy
     config = SRConfig(enabled=True, checkpoint_path="/bundle", lu_load_scales=("2x",),
-                      decode_segment_frames=4, decode_spatial_splits=2)
+                      vae_backend="torch", decode_segment_frames=4, decode_spatial_splits=2)
     factory.load_sr_pipeline(config, "cuda:3", offload=handle)
     assert seen["components_kwargs"]["device"] == "cpu"
     assert seen["components_kwargs"]["lu_load_scales"] == ("2x",)
@@ -164,6 +167,56 @@ def test_resident_load_keeps_requested_device(monkeypatch):
     seen = _patch_loaders(monkeypatch, latent_upscaler=None)
     factory.load_sr_pipeline(SRConfig(enabled=True, checkpoint_path="/bundle"), "cuda:2")
     assert seen["components_kwargs"]["device"] == "cuda:2"
+
+
+def test_split_backend_forces_a_single_spatial_split(monkeypatch):
+    seen = _patch_loaders(monkeypatch, latent_upscaler=None)
+    config = SRConfig(
+        enabled=True,
+        checkpoint_path="/bundle",
+        vae_backend="split",
+        decode_spatial_splits=4,
+        decode_segment_frames=16,
+    )
+    factory.load_sr_pipeline(config, "cpu")
+    assert seen["components_kwargs"]["vae_backend"] == "split"
+    assert seen["pipeline_kwargs"]["decode_spatial_splits"] == 1
+    assert seen["components"].vae.decode_spatial_splits == 1
+    assert seen["components"].vae.decode_segment_frames == 0
+
+
+def test_cutedsl_nabla_is_installed_before_load(monkeypatch):
+    seen = _patch_loaders(monkeypatch, latent_upscaler=None)
+    calls: list[str] = []
+
+    def fake_install() -> None:
+        calls.append("install")
+
+    def fake_load_components(**kwargs):
+        calls.append("load")
+        seen["components_kwargs"] = kwargs
+        return seen["components"]
+
+    monkeypatch.setattr(factory, "load_sr_components", fake_load_components)
+    monkeypatch.setattr("kandinsky_sr.core.components.model.nabla_cutedsl.fa4_installed", lambda: True)
+    monkeypatch.setattr(
+        "kandinsky_sr.core.components.model.nabla_cutedsl.install_nabla_cutedsl",
+        fake_install,
+    )
+    factory.load_sr_pipeline(SRConfig(enabled=True, checkpoint_path="/bundle", nabla="cutedsl"), "cpu")
+    assert calls == ["install", "load"]
+
+
+def test_cutedsl_without_fa4_keeps_the_block64_nabla(monkeypatch):
+    seen = _patch_loaders(monkeypatch, latent_upscaler=None)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "kandinsky_sr.core.components.model.nabla_cutedsl.install_nabla_cutedsl",
+        lambda: calls.append("install"),
+    )
+    factory.load_sr_pipeline(SRConfig(enabled=True, checkpoint_path="/bundle"), "cpu")
+    assert calls == []
+    assert seen["components_kwargs"]["vae_backend"] == "split"
 
 
 def test_block_offload_rejects_magi_before_loading(monkeypatch):

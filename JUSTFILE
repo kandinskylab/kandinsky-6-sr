@@ -10,8 +10,25 @@ export UV_INDEX_STRATEGY := "unsafe-best-match"
 lock:
     @uv lock
 
+# Install dev tools, then flash-attn-4 (CuteDSL NABLA). CUDA 13 uses the cu13
+# extra. If that install fails, flash-attn 2 is installed and NABLA stays on
+# the block-64 flex kernel.
 setup:
-    @uv sync --group dev
+    #!/usr/bin/env bash
+    set -euo pipefail
+    uv sync --group dev
+    cuda="$(uv run python -c 'import torch; print((torch.version.cuda or "0").split(".")[0])')"
+    extra="flash4"
+    if [[ "$cuda" == "13" ]]; then
+        extra="flash4-cu13"
+    fi
+    echo "Installing ${extra} (torch CUDA ${cuda})"
+    if uv sync --group dev --extra "$extra"; then
+        echo "flash-attn-4 installed; NABLA CuteDSL is the default"
+    else
+        echo "flash-attn-4 could not be installed; falling back to flash-attn 2 and the block-64 NABLA"
+        uv sync --group dev --extra flash
+    fi
 
 # Also build the MagiCompiler KVAE backend (`vae_backend: magi`).
 setup-magi:

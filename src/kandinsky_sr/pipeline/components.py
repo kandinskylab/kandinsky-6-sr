@@ -137,7 +137,8 @@ def build_vae_for_backend(vae_conf: Any, vae_name: str, vae_backend: VaeBackend)
         vae_name: ``vae_conf.name`` (passed separately for logging/dispatch).
         vae_backend: ``"torch"`` — per-block/leaf ``torch.compile``
             (``compiled_kvae.py``); ``"magi"`` — MagiCompiler static graphs
-            per temporal segment (``compiled_kvae_v2_magi.py``).
+            per temporal segment (``compiled_kvae_v2_magi.py``); ``"split"`` —
+            tiled ``torch.compile`` KVAE (``split_vae``).
 
     Returns:
         The built VAE (eval/bfloat16 handled by the builders or the caller).
@@ -151,8 +152,13 @@ def build_vae_for_backend(vae_conf: Any, vae_name: str, vae_backend: VaeBackend)
 
     if vae_backend == "magi":
         return build_magi_compiled_kvae(vae_conf)
+    if vae_backend == "split":
+        from kandinsky_sr.core.components.split_vae import build_split_sr_vae  # noqa: PLC0415
+
+        logger.info("building split SR VAE from {}", vae_conf.checkpoint_path)
+        return build_split_sr_vae(vae_conf)
     if vae_backend != "torch":
-        msg = f"Unknown vae_backend {vae_backend!r}; expected 'torch' or 'magi'."
+        msg = f"Unknown vae_backend {vae_backend!r}; expected 'torch', 'magi', or 'split'."
         raise ValueError(msg)
     return build_compiled_kvae(vae_conf)
 
@@ -755,7 +761,7 @@ def load_sr_components(  # noqa: PLR0913
         latent_upscaler_config: A bundle or its ``latent_upscaler`` component,
             an LU bank YAML (or its dir / repo id); ``"none"`` disables the
             LU, ``None`` takes the upscalers of the checkpoint's bundle.
-        vae_backend: VAE compilation backend, ``"torch"`` or ``"magi"``.
+        vae_backend: VAE compilation backend, ``"torch"``, ``"magi"``, or ``"split"``.
         dit_overrides: Post-load DiT attribute overrides (see :func:`load_dit`).
         instruct_type_override: Post-load ``instruct_type`` override.
         lu_load_scales: Bank entries loaded eagerly; ``None`` = all.

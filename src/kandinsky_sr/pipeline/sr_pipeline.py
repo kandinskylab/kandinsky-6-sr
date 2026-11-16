@@ -45,7 +45,7 @@ from kandinsky_sr.core.algo.tiling_utils import (
 from kandinsky_sr.core.components.model.vae_io import cast_to_module_dtype
 from kandinsky_sr.core.types import SRPipelineOutput
 from kandinsky_sr.core.utils.offload import NoOpOffload, OffloadHandle
-from kandinsky_sr.pipeline.config import ResolutionScale, TilingScale
+from kandinsky_sr.pipeline.config import ResolutionScale, TilingScale, VaeBackend
 from kandinsky_sr.pipeline.progress import CompositeProgress, ProgressReporter, TqdmProgress
 from kandinsky_sr.pipeline.source_padding import SourcePadding, source_padding
 from kandinsky_sr.pipeline.tile_grid import compute_tile_grid_even
@@ -555,7 +555,7 @@ class Kandinsky6SRPipeline:
         source_vae: torch.nn.Module | None = None,
         kvae_bridge: bool = False,
         mode: Literal["pixel", "latent"] = "pixel",
-        vae_backend: Literal["torch", "magi"] = "torch",
+        vae_backend: VaeBackend = "torch",
         offload: OffloadHandle | None = None,
     ) -> None:
         self.dit = dit

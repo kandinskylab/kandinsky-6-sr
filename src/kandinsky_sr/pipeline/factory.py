@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from loguru import logger
 
 from kandinsky_sr import constants as sr_constants
 from kandinsky_sr.core.utils.offload import NoOpOffload, OffloadHandle
@@ -58,6 +59,14 @@ def load_sr_pipeline(  # noqa: PLR0913
     strategy = sr_offload.strategy
     if strategy == "block" and sr_cfg.vae_backend == "magi":
         raise ValueError("SR block offload requires vae_backend='torch'; Magi graphs retain CUDA weight storage")
+    if sr_cfg.nabla == "cutedsl":
+        from kandinsky_sr.core.components.model.nabla_cutedsl import (  # noqa: PLC0415
+            install_nabla_cutedsl,
+            resolve_nabla_backend,
+        )
+
+        if resolve_nabla_backend(sr_cfg.nabla) == "cutedsl":
+            install_nabla_cutedsl()
     # Registering after a CUDA load is too late: the combined weights alone
     # exceed 16 GB. Cold LU bank entries must inherit CPU storage as well.
     compute_device = torch.device(device)
@@ -75,11 +84,23 @@ def load_sr_pipeline(  # noqa: PLR0913
         lu_load_scales=sr_cfg.lu_load_scales,
     )
 
-    if sr_cfg.decode_segment_frames:
+    decode_spatial_splits = sr_cfg.decode_spatial_splits
+    if sr_cfg.vae_backend == "split":
+        # The tiled KVAE splits the decoder on its own 2×4 grid. The packaged
+        # spatial/temporal tiling would crop that grid a second time.
+        if decode_spatial_splits != 1:
+            logger.warning(
+                "split SR VAE tiles the decoder internally; forcing decode_spatial_splits from {} to 1",
+                decode_spatial_splits,
+            )
+            decode_spatial_splits = 1
+        if sr_cfg.decode_segment_frames:
+            logger.warning("split SR VAE ignores decode_segment_frames={}", sr_cfg.decode_segment_frames)
+    elif sr_cfg.decode_segment_frames:
         if not hasattr(components.vae, "decode_segment_frames"):
             raise ValueError("Configured decode_segment_frames requires the torch KVAE backend")
         components.vae.decode_segment_frames = sr_cfg.decode_segment_frames
-    components.vae.decode_spatial_splits = sr_cfg.decode_spatial_splits
+    components.vae.decode_spatial_splits = decode_spatial_splits
     components.vae.decode_spatial_overlap = sr_cfg.decode_spatial_overlap
     sr_offload.register("dit", components.dit)
     sr_offload.register("vae", components.vae)
@@ -96,7 +117,7 @@ def load_sr_pipeline(  # noqa: PLR0913
         resolution_scale=resolution_scale,
         overlap=sr_cfg.overlap,
         tiles_batch_size=sr_cfg.tiles_batch_size,
-        decode_spatial_splits=sr_cfg.decode_spatial_splits,
+        decode_spatial_splits=decode_spatial_splits,
         decode_spatial_overlap=sr_cfg.decode_spatial_overlap,
         cached_text_embeds=components.cached_text_embeds,
         spatial_factor=int(sr_constants.VAE_SPATIAL_FACTOR),

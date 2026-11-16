@@ -36,6 +36,7 @@ from kandinsky_sr.core.algo.latent_upscaler import (
 from kandinsky_sr.core.algo.mux import mux_video_audio
 from kandinsky_sr.pipeline.components import scale_factor_for
 from kandinsky_sr.pipeline.config import (
+    NablaBackend,
     ResolutionScale,
     SRConfig,
     TargetResizeMode,
@@ -111,7 +112,21 @@ class CommonOptions:
             name="--vae-backend",
             show_default=True,
             help=(
-                "VAE compilation backend: 'torch' = per-block/leaf torch.compile; 'magi' = MagiCompiler static graphs."
+                "VAE compilation backend: 'torch' = per-block/leaf torch.compile; "
+                "'magi' = MagiCompiler static graphs; 'split' = tiled torch.compile KVAE."
+            ),
+        ),
+    ] = None
+    nabla: Annotated[
+        NablaBackend | None,
+        cyclopts.Parameter(
+            name="--nabla",
+            show_default=True,
+            help=(
+                "NABLA self-attention. Default 'cutedsl': mean-pool 8×16, top-cdf, "
+                "FlexAttention CuteDSL at block 128 (needs flash-attn-4). "
+                "Without flash-attn-4 the run stays on 'flex', the block-64 NABLA, "
+                "and dense flash paths use flash-attn 2."
             ),
         ),
     ] = None
@@ -255,6 +270,7 @@ def _prepare_common(options: CommonOptions) -> SRConfig:
         "vae_path": options.vae_path,
         "latent_upscaler_config": options.latent_upscaler_config,
         "vae_backend": options.vae_backend,
+        "nabla": options.nabla,
         "device": options.device,
         "num_steps": options.num_steps,
         "seed": options.seed,
