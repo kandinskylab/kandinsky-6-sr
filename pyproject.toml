@@ -37,11 +37,15 @@ flash = [
 # CuteDSL FlashAttention. FlexAttention BACKEND="FLASH" imports flash_attn.cute.
 # `just setup` tries this extra and falls back to `flash` when it cannot be installed.
 # CUDA 13 needs the cu13 extra (nvidia-cutlass-dsl[cu13]).
+# torch 2.10's FLASH template builds score_mod without the seqlen_info argument
+# that every flash-attn-4 >= 4.0.0b17 passes, so CuteDSL needs torch >= 2.11.
 flash4 = [
     "flash-attn-4>=4.0.0b25",
+    "torch>=2.11.0",
 ]
 flash4-cu13 = [
     "flash-attn-4[cu13]>=4.0.0b25",
+    "torch>=2.11.0",
 ]
 # Optional Linux dependencies for the MagiCompiler KVAE backend.
 # MagiCompiler itself is not on PyPI: install v1.1.0 separately as documented
@@ -87,11 +91,12 @@ conflicts = [
         { extra = "flash4-cu13" },
     ],
 ]
-# This repo's own environment pins the validated torch 2.10.0. The CUDA build is
+# This repo's own environment pins torch 2.11.0, the first release whose
+# FlexAttention FLASH template works with flash-attn-4 (NABLA CuteDSL). The CUDA build is
 # NOT pinned here: `[tool.uv.sources]` travels with the package to git consumers
 # (k6_video pins its own torch index), so this repo's JUSTFILE selects the
 # CUDA 12.8 wheels via UV_INDEX instead (NVIDIA drivers >= 12.8).
-constraint-dependencies = ["torch==2.10.0", "torchvision==0.25.0"]
+constraint-dependencies = ["torch==2.11.0", "torchvision==0.26.0"]
 # flash-attn and MagiCompiler must NOT build in an isolated env: their
 # build-system.requires pull torch (gigabytes) and can hang. With isolation off,
 # the real build needs are supplied via extra-build-dependencies below.
