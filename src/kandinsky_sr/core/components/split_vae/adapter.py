@@ -37,8 +37,16 @@ class SplitSRVAE(nn.Module):
         return SplitVAE.denormalize_data(data)
 
     def encode(self, x: torch.Tensor, seg_len: int = 16) -> tuple[torch.Tensor, None]:
+        """Encode a batch one video at a time.
+
+        The tiled encoder reads only sample 0. A stacked call would raise, so
+        each video is encoded alone and the latents are concatenated.
+        """
         del seg_len
-        return self.vae.encode(x), None
+        if x.shape[0] <= 1:
+            return self.vae.encode(x), None
+        latents = [self.vae.encode(x[index : index + 1]) for index in range(x.shape[0])]
+        return torch.cat(latents, dim=0), None
 
     def decode(self, z: torch.Tensor, split_list: list[int] | None = None) -> DecoderOutput:
         del split_list

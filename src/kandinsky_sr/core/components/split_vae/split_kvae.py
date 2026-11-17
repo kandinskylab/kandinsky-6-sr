@@ -41,6 +41,10 @@ def get_n_tile_log(t_h_w: Tuple[int, int, int], max_channels: int, exact: bool) 
     n_tiles_log = -33 + math.log2(T) + math.log2(H) + math.log2(W) + math.log2(max_channels)
     if n_tiles_log < 0:
         return n_tiles_log
+    # Levels above 2 have no schedule. Return the raw estimate so the caller
+    # can cut the frame instead of indexing SPLIT_INFO and raising KeyError.
+    if math.ceil(n_tiles_log) > 2:
+        return n_tiles_log
 
     if W > H:
         H, W = W, H
@@ -65,6 +69,19 @@ def get_n_tile_log(t_h_w: Tuple[int, int, int], max_channels: int, exact: bool) 
         n_tiles_log = -33 + max((n1, n2)) + math.log2(h_scale) + math.log2(w_scale)
 
     return n_tiles_log
+
+
+def spatial_after_downsamples(length: int, downs: int) -> int:
+    """Output size of ``downs`` stride-2 convolutions with kernel 3 and pad 1."""
+    for _ in range(downs):
+        length = (length - 1) // 2 + 1
+    return length
+
+
+# forward_4 keeps 24 input pixels of context (12 on the map after piece_0).
+# Pixel-unshuffle needs each tile divisible by 16, so the outer cut rounds
+# that context up to 32 and still covers the seam.
+_OUTER_HALO = 32
 
 
 def get_offset(offset: int, idx: int, N: int, downscale: int = 1) -> Tuple[int, int, int]:
@@ -435,7 +452,7 @@ class SplitVAE(nn.Module):
 
     def init_from_ckpt(self, path):
         """Load checkpoint weights and fitted temporal kernels."""
-        source = safetensors_load_file(str(path), device="cpu")
+        source = read_kvae_state(str(path))
         target = self.state_dict()
         sd = {}
         for key, value in source.items():
@@ -457,15 +474,7 @@ class SplitVAE(nn.Module):
             prefix = f"encoder.down.{level}.downsample.temporal_conv."
             channels = self.encoder.down[level].downsample.temporal_conv.conv.out_channels
             fitted_path = self.temporal_weights_dir / f"t4hw16ch{channels}.pt"
-            metadata_path = fitted_path.with_suffix(".json")
-            if metadata_path.is_file():
-                digest = hashlib.sha256()
-                for key in sorted(key for key in source if key.startswith(prefix)):
-                    digest.update(key.removeprefix(prefix).encode())
-                    digest.update(source[key].detach().contiguous().view(torch.uint8).numpy().tobytes())
-                metadata = json.loads(metadata_path.read_text())
-                if metadata["source_weights_sha256"] != digest.hexdigest():
-                    raise ValueError(f"Fitted temporal weights do not match checkpoint: {fitted_path}")
+            _check_fitted_temporal(fitted_path, source, prefix)
             weights = torch.load(fitted_path, map_location="cpu", weights_only=True)
             for key, value in weights.items():
                 sd[prefix + key] = value
@@ -543,6 +552,8 @@ class SplitVAE(nn.Module):
             raise Exception("Batch size greater than 1 is not supported.")
         # For 4x16x16 with downsample_version=2, channels double at each level
         n_tiles_log = get_n_tile_log((T, H, W), self.encoder.ch, exact)
+        if n_tiles_log > 2:
+            return self._encode_spatial_halves(x, exact)
 
         with torch._dynamo.utils.disable_cache_limit():
             if n_tiles_log <= 0:
@@ -563,6 +574,50 @@ class SplitVAE(nn.Module):
             
             return out
 
+    def _encode_spatial_halves(self, x: Tensor, exact: bool) -> Tensor:
+        """Cut the long side and encode each half with the existing 1/2/4-tile paths.
+
+        There is no 8-tile kernel. The halo is real pixels from the other half,
+        dropped again in latent space so the seam keeps encoder context.
+        """
+        _, _, _, height, width = x.shape
+        downs = self.encoder.num_resolutions - 1
+        spatial = 2 ** downs
+        along_height = height >= width
+        length = height if along_height else width
+        mid = (length // 2) // spatial * spatial
+        halo = _OUTER_HALO if exact else 0
+        if mid < spatial or length - mid < spatial or mid <= halo or length - mid <= halo:
+            raise NotImplementedError(
+                f"encoder tiling stops at 4 tiles; {height}x{width} cannot be split further"
+            )
+        if along_height:
+            left_in = x[:, :, :, : mid + halo, :]
+            right_in = x[:, :, :, mid - halo :, :]
+            seam = -2
+        else:
+            left_in = x[:, :, :, :, : mid + halo]
+            right_in = x[:, :, :, :, mid - halo :]
+            seam = -1
+        left = self.encode(left_in, exact)
+        right = self.encode(right_in, exact)
+        left_keep = spatial_after_downsamples(mid, downs)
+        right_keep = spatial_after_downsamples(length - mid, downs)
+        left_extra = left.shape[seam] - left_keep
+        right_extra = right.shape[seam] - right_keep
+        if left_extra < 0 or right_extra < 0:
+            raise RuntimeError(
+                f"latent {tuple(left.shape)} / {tuple(right.shape)} is smaller than the kept span "
+                f"{left_keep}+{right_keep}"
+            )
+        if seam == -2:
+            left = left[:, :, :, : left.shape[-2] - left_extra]
+            right = right[:, :, :, right_extra :]
+        else:
+            left = left[:, :, :, :, : left.shape[-1] - left_extra]
+            right = right[:, :, :, :, right_extra :]
+        return torch.cat((left, right), dim=seam)
+
     def decode(self, z: Tensor, seg_len=16) -> Tensor:
         return self.decoder(z)
 
@@ -571,6 +626,47 @@ class SplitVAE(nn.Module):
         latent = self.encode(x, exact)
         recs = self.decode(latent)
         return recs
+
+
+def read_kvae_state(path: str) -> Dict[str, Tensor]:
+    """Load a flat KVAE state dict from safetensors or a training ``.ckpt``.
+
+    The training file is ``{"state_dict": ...}``. Key names are rewritten the
+    same way as ``CachedCausalVAE.init_from_ckpt``: drop ``loss.*`` and decoder
+    upsamples, and shorten the conv wrappers the release format already flattened.
+    """
+    if str(path).endswith(".safetensors"):
+        return safetensors_load_file(str(path), device="cpu")
+    blob = torch.load(path, map_location="cpu", weights_only=False)
+    state = blob["state_dict"] if isinstance(blob, dict) and "state_dict" in blob else blob
+    renamed: Dict[str, Tensor] = {}
+    for key, value in state.items():
+        if key.startswith("loss."):
+            continue
+        if key.startswith("decoder") and "upsample" in key:
+            continue
+        if ".conv_b.conv" in key:
+            key = key.replace(".conv_b.conv", ".conv_b")
+        elif ".conv_y.conv" in key:
+            key = key.replace(".conv_y.conv", ".conv_y")
+        elif key.endswith("sample.temporal_conv.conv.weight") or key.endswith("sample.temporal_conv.conv.bias"):
+            key = key.replace(".temporal_conv.conv.", ".temporal_conv.")
+        renamed[key] = value
+    return renamed
+
+
+def _check_fitted_temporal(fitted_path: Path, source: Dict[str, Tensor], prefix: str) -> None:
+    """Reject a checkpoint whose temporal kernels were not the ones these assets were fit to."""
+    metadata_path = fitted_path.with_suffix(".json")
+    if not metadata_path.is_file():
+        raise FileNotFoundError(f"Fitted temporal weights have no checksum sidecar: {metadata_path}")
+    digest = hashlib.sha256()
+    for key in sorted(key for key in source if key.startswith(prefix)):
+        digest.update(key.removeprefix(prefix).encode())
+        digest.update(source[key].detach().contiguous().view(torch.uint8).numpy().tobytes())
+    metadata = json.loads(metadata_path.read_text())
+    if metadata["source_weights_sha256"] != digest.hexdigest():
+        raise ValueError(f"Fitted temporal weights do not match checkpoint: {fitted_path}")
 
 
 def inference_dtype(conf):

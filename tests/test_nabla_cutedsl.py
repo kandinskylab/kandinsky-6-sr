@@ -14,6 +14,7 @@ from kandinsky_sr.core.components.model.nabla_cutedsl import (
     nabla_topcdf_sum,
     sr_nabla_block_mask,
     sr_sequence_fits_cutedsl,
+    topcdf_mask,
 )
 
 _ODD_LATENT_FRAMES = (31, 61)
@@ -46,6 +47,29 @@ def test_coarsen_is_or_of_two_by_two() -> None:
     )
     coarse = coarsen_mask_2x2(fine)
     assert coarse.tolist() == [[True, False], [False, True]]
+
+
+def test_topcdf_does_not_force_the_last_block() -> None:
+    """Mass on block 0 must not open the last key block."""
+    scores = torch.tensor([[0.97, 0.01, 0.01, 0.01]])
+    mask = topcdf_mask(scores, threshold=0.9)
+    assert bool(mask[0, 0])
+    assert not bool(mask[0, -1])
+
+
+def test_document_mask_blocks_the_neighboring_tile() -> None:
+    """STA wider than a tile still cannot see the other tile's keys."""
+    frames, height, width, dim = 2, 16, 16, 8
+    tokens = frames * height * width
+    query = torch.randn(1, 1, tokens, dim)
+    key = torch.randn(1, 1, tokens, dim)
+    seqlens = torch.tensor([0, 1, 2], dtype=torch.int32)
+    mask = nabla_topcdf(query, key, (frames, height, width), sta=(11, 7, 7), seqlens=seqlens)
+    blocks_per_doc = (height * width) // ATTN_BLOCK
+    assert not bool(mask[..., :blocks_per_doc, blocks_per_doc:].any())
+    assert not bool(mask[..., blocks_per_doc:, :blocks_per_doc].any())
+    assert bool(mask[..., :blocks_per_doc, :blocks_per_doc].any())
+    assert bool(mask[..., blocks_per_doc:, blocks_per_doc:].any())
 
 
 def test_topcdf_mask_is_half_the_fine_grid() -> None:

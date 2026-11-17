@@ -45,9 +45,7 @@ def topcdf_mask(scores: Tensor, threshold: float) -> Tensor:
     order = scores.argsort(dim=-1)
     ranked = scores.gather(-1, order)
     keep = ranked.cumsum(-1) >= (1.0 - threshold)
-    mask = keep.scatter(-1, order, keep)
-    mask[..., -1] = True
-    return mask
+    return keep.scatter(-1, order, keep)
 
 
 def sum_pool_2x2(scores: Tensor) -> Tensor:
@@ -93,8 +91,34 @@ def coarsen_mask_2x2(mask: Tensor) -> Tensor:
     return paired.any(dim=-1).any(dim=-2)
 
 
-def block_scores(query: Tensor, key: Tensor, pool_block: int = POOL_BLOCK) -> Tensor:
-    """Softmax of mean-pooled queries and keys. One row per ``pool_block`` tokens."""
+def document_block_mask(seqlens: Tensor, frames: int, blocks_per_frame: int, device: torch.device) -> Tensor:
+    """Block-diagonal mask on the 128-token grid, shape ``(blocks, blocks)``.
+
+    ``seqlens`` is cumulative frame counts, the same tensor ``nablaT_v2_doc``
+    reads. Each frame holds ``blocks_per_frame`` key blocks, so a tile boundary
+    lands on a block boundary for the trained bases.
+    """
+    if blocks_per_frame < 1:
+        raise ValueError(f"blocks_per_frame must be positive, got {blocks_per_frame}")
+    lengths = torch.diff(seqlens.to(device=device, dtype=torch.long))
+    if lengths.numel() == 0 or int(lengths.sum()) != frames or bool((lengths <= 0).any()):
+        raise ValueError(f"visual_seqlens {seqlens.detach().cpu().tolist()} do not cover {frames} frames")
+    eye = torch.eye(int(lengths.numel()), dtype=torch.bool, device=device)
+    repeats = lengths * blocks_per_frame
+    return eye.repeat_interleave(repeats, 0).repeat_interleave(repeats, 1)
+
+
+def block_scores(
+    query: Tensor,
+    key: Tensor,
+    pool_block: int = POOL_BLOCK,
+    document: Tensor | None = None,
+) -> Tensor:
+    """Softmax of mean-pooled queries and keys. One row per ``pool_block`` tokens.
+
+    ``document`` is a bool block mask. Its log is added before the softmax, so
+    top-cdf spends its budget inside the tile, matching ``nablaT_v2_doc``.
+    """
     tokens = query.shape[-2]
     if key.shape[-2] != tokens or tokens % pool_block:
         raise ValueError(f"expected a shared multiple of {pool_block} tokens, got q={tokens} k={key.shape[-2]}")
@@ -104,7 +128,10 @@ def block_scores(query: Tensor, key: Tensor, pool_block: int = POOL_BLOCK) -> Te
         return x.reshape(batch, heads, tokens // pool_block, pool_block, dim).mean(-2)
 
     pooled_key = _pool(key)
-    return torch.softmax((_pool(query) @ pooled_key.transpose(-2, -1)) * pooled_key.shape[-1] ** -0.5, dim=-1)
+    logits = (_pool(query) @ pooled_key.transpose(-2, -1)) * pooled_key.shape[-1] ** -0.5
+    if document is not None:
+        logits = logits + document.to(dtype=logits.dtype).log()
+    return torch.softmax(logits, dim=-1)
 
 
 def _checked_grid(query: Tensor, key: Tensor, shape: tuple[int, int, int]) -> tuple[int, int, int]:
@@ -151,24 +178,35 @@ def nabla_topcdf_sum(
     return mask
 
 
-def nabla_topcdf(
+def nabla_topcdf(  # noqa: PLR0913 — document lengths ride with the mask knobs
     query: Tensor,
     key: Tensor,
     shape: tuple[int, int, int],
     threshold: float = 0.8,
     sta: tuple[int, int, int] | None = (11, 7, 7),
+    seqlens: Tensor | None = None,
 ) -> Tensor:
     """Mean-pool each 8×16 tile, then top-cdf on that 128-token grid.
 
     ``query`` and ``key`` are ``(batch, heads, tokens, dim)`` in fractal order
     ``(frame, 8×8-row, 8×8-column)``. ``shape`` is ``(frames, height, width)``
     in latent pixels. The returned mask is ``(batch, heads, tokens/128, tokens/128)``.
+
+    ``seqlens`` are cumulative frame counts of packed tiles. One document
+    (``[0, frames]``) leaves the mask unchanged. Several documents zero every
+    cross-tile block, including STA cells that would otherwise cross the cut.
     """
     frames, blocks_h, blocks_w = _checked_grid(query, key, shape)
-    mask = topcdf_mask(block_scores(query, key, ATTN_BLOCK), threshold)
+    _, height, width = shape
+    document = None
+    if seqlens is not None:
+        document = document_block_mask(seqlens, frames, (height * width) // ATTN_BLOCK, query.device)
+    mask = topcdf_mask(block_scores(query, key, ATTN_BLOCK, document), threshold)
     if sta is not None:
         window = sta_mask((frames, blocks_h, blocks_w), sta, query.device)
         mask = mask | coarsen_mask_2x2(window)
+    if document is not None:
+        mask = mask & document
     return mask
 
 
@@ -191,15 +229,16 @@ def flex_cutedsl(query: Tensor, key: Tensor, value: Tensor, block_mask: BlockMas
 
 
 @torch.compiler.disable  # the S/128 score matmul is not splittable under dynamic compile
-def sr_nabla_block_mask(
+def sr_nabla_block_mask(  # noqa: PLR0913 — document lengths ride with the mask knobs
     query: Tensor,
     key: Tensor,
     shape: tuple[int, int, int],
     threshold: float = 0.8,
     sta: tuple[int, int, int] | None = (11, 7, 7),
+    seqlens: Tensor | None = None,
 ) -> BlockMask:
     """Block mask the SR DiT can hand to :func:`flex_cutedsl`."""
-    mask = nabla_topcdf(query, key, shape, threshold, sta)
+    mask = nabla_topcdf(query, key, shape, threshold, sta, seqlens)
     return block_mask_from_dense(mask, ATTN_BLOCK)
 
 
@@ -236,6 +275,7 @@ def attention_flex_cutedsl(  # noqa: PLR0913
         (int(frames), int(height), int(width)),
         float(sparse_params["P"]),
         _sta_window(sparse_params),
+        sparse_params["visual_seqlens"],
     )
     from kandinsky_sr.core.components.model.nn import flex  # noqa: PLC0415
 
