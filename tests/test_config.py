@@ -75,6 +75,16 @@ def test_full_pipeline_yaml_reads_only_sr_section(tmp_path: Path) -> None:
     assert sr.device == "cuda:1"
 
 
+def test_split_vae_and_cutedsl_nabla_load_from_yaml(tmp_path: Path) -> None:
+    config_path = tmp_path / "sr.yaml"
+    config_path.write_text("sr:\n  checkpoint_path: /dit\n  vae_backend: split\n  nabla: cutedsl\n")
+
+    sr = load_sr_config_yaml(config_path)
+
+    assert sr.vae_backend == "split"
+    assert sr.nabla == "cutedsl"
+
+
 def test_missing_sr_section_raises(tmp_path: Path) -> None:
     config_path = tmp_path / "other.yaml"
     config_path.write_text("model:\n  name: k6\n")
@@ -89,6 +99,8 @@ def test_defaults() -> None:
     assert sr.device == "cuda:0"
     assert sr.resolution_scale == DEFAULT_RESOLUTION_SCALE
     assert sr.enabled is False
+    assert sr.vae_backend == "split"
+    assert sr.nabla == "cutedsl"
 
 
 @pytest.mark.parametrize("scale", [2, 2.25, 4])

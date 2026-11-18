@@ -1,4 +1,4 @@
-# torch wheel index for this repo's own environment (validated: torch 2.10.0 / CUDA 12.8).
+# torch wheel index for this repo's own environment (torch 2.11.0 / CUDA 12.8).
 # Pick another CUDA build for your driver: just torch_index=https://download.pytorch.org/whl/cu130 setup
 torch_index := "https://download.pytorch.org/whl/cu128"
 
@@ -10,19 +10,42 @@ export UV_INDEX_STRATEGY := "unsafe-best-match"
 lock:
     @uv lock
 
+# Install dev tools, then flash-attn-4 (CuteDSL NABLA). CUDA 13 uses the cu13
+# extra. If that install fails, flash-attn 2 is installed and NABLA stays on
+# the block-64 flex kernel.
 setup:
-    @uv sync --group dev
+    @{{just_executable()}} sync-with-flash .venv/bin/python
+
+# `uv sync` is exact: every call repeats ARGS, or it would drop what they installed.
+[private]
+sync-with-flash python *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    uv sync --group dev {{ARGS}}
+    cuda="$("{{python}}" -c 'import torch; print((torch.version.cuda or "0").split(".")[0])')"
+    extra="flash4"
+    if [[ "$cuda" == "13" ]]; then
+        extra="flash4-cu13"
+    fi
+    echo "Installing ${extra} (torch CUDA ${cuda})"
+    if uv sync --group dev {{ARGS}} --extra "$extra"; then
+        echo "flash-attn-4 installed; NABLA CuteDSL is the default"
+    else
+        echo "flash-attn-4 could not be installed; falling back to flash-attn 2 and the block-64 NABLA"
+        uv sync --group dev {{ARGS}} --extra flash
+    fi
 
 # Also build the MagiCompiler KVAE backend (`vae_backend: magi`).
 setup-magi:
     @uv sync --group dev --group magi --extra magi
 
-# Sync into the ACTIVE conda environment instead of .venv (no venv is created).
+# Sync into the ACTIVE conda environment instead of .venv (no venv is created),
+# with the same flash-attn-4 / flash-attn 2 choice as `setup`.
 # Extras pass through: just setup-conda --group magi --extra magi
 setup-conda *ARGS:
     @if [ -z "$CONDA_PREFIX" ]; then echo "Error: no conda environment is active. Activate one first (e.g. 'conda activate myenv')." && exit 1; fi
     @echo "=== Syncing kandinsky_sr into conda env $CONDA_PREFIX ==="
-    VIRTUAL_ENV="$CONDA_PREFIX" uv sync --group dev --active {{ARGS}}
+    VIRTUAL_ENV="$CONDA_PREFIX" {{just_executable()}} sync-with-flash "$CONDA_PREFIX/bin/python" --active {{ARGS}}
 
 lint:
     @uv run ruff check .

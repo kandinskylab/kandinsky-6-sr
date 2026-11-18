@@ -31,12 +31,20 @@ Tiled video super-resolution for the **Kandinsky 6.0 Video** pipeline: **KVAE en
 
 ### 1. Install
 
-Install the base package from GitHub (MagiCompiler is not required; the default backend is `torch`):
+Install the base package from GitHub. The default KVAE backend is the tiled `split` VAE. NABLA defaults to CuteDSL (`nabla: cutedsl`) when flash-attn-4 is installed, and stays on the block-64 kernel otherwise:
 
 ```bash
-pip install "kandinsky-6-sr @ git+https://github.com/kandinskylab/kandinsky-6-sr"
-# pip install kandinsky-6-sr
+pip install "kandinsky-6-sr[flash4] @ git+https://github.com/kandinskylab/kandinsky-6-sr"
+# CUDA 13: pip install "kandinsky-6-sr[flash4-cu13] @ git+https://github.com/kandinskylab/kandinsky-6-sr"
 ```
+
+`flash-attn-4` provides `flash_attn.cute`, which FlexAttention `BACKEND=FLASH` imports. If that extra cannot be installed, install flash-attn 2 instead. NABLA then uses the block-64 kernel, and the dense flash paths use FA2:
+
+```bash
+pip install "kandinsky-6-sr[flash] @ git+https://github.com/kandinskylab/kandinsky-6-sr"
+```
+
+In a checkout, `just setup` does the same: it installs flash-attn-4 (the `flash4-cu13` extra on CUDA 13) and falls back to flash-attn 2 when that install fails.
 
 With the MagiCompiler KVAE backend (`vae_backend: magi`, Linux with NVIDIA CUDA):
 
@@ -127,7 +135,8 @@ Schema: `src/kandinsky_sr/pipeline/config.py::SRConfig`. The same section works 
 | `latent_upscaler_config` | the bundle's `latent_upscaler/` | Latent upscalers (x2 and x4). Unset = the bank of the `checkpoint_path` bundle. Otherwise a bundle (repo id or local dir), its component (`<repo>/latent_upscaler` or a local `latent_upscaler/` dir), or a native LU bank YAML (architectures + checkpoints; relative `checkpoint:` entries resolve against the YAML's directory) or the directory holding it. `"none"` disables the LU (pixel path). Required with a native DiT checkpoint. |
 | `resolution_scale` | `2.25` | Total upscale factor: `2`, `4`, or `2.25` (x1.125 pixel pre-upscale + x2 tiling). |
 | `num_steps` | `5` | Denoising grid points per tile (N points = N−1 steps). Ignored by π-Flow-distilled checkpoints (they run at the trained nfe). |
-| `vae_backend` | `torch` | KVAE compilation backend: `torch` (torch.compile) or `magi` (MagiCompiler, needs the `magi` extra and separate compiler installation). |
+| `vae_backend` | `split` | KVAE compilation backend: `split` (tiled torch.compile KVAE; encode and decode tile internally, so `decode_spatial_splits` is forced to 1), `torch` (per-block torch.compile), or `magi` (MagiCompiler, needs the `magi` extra and separate compiler installation). |
+| `nabla` | `cutedsl` | Sparse self-attention. `cutedsl` mean-pools each 8×16 tile, takes top-cdf and runs FlexAttention CuteDSL at block 128 (needs flash-attn-4). Without that package the load stays on `flex`, the block-64 NABLA. |
 | `device` | `cuda:0` | CUDA device the pipeline runs on; `--device` overrides. |
 | `seed` | `42` | Noise seed (per-tile-chunk deterministic). |
 | `tiles_batch_size` | `1` | Tiles per DiT call; larger = better GPU utilisation, more peak memory. |

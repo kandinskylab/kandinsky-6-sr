@@ -23,7 +23,10 @@ ResolutionScale = Literal[2, 2.25, 4]
 # Tiling factor of the DiT pass, after any pre-upscale.
 TilingScale = Literal[2, 4]
 TargetResizeMode = Literal["fit", "exact"]
-VaeBackend = Literal["torch", "magi"]
+VaeBackend = Literal["torch", "magi", "split"]
+# Sparse self-attention. ``flex`` is the block-64 NABLA already in the DiT.
+# ``cutedsl`` mean-pools each 8×16 tile and runs FlexAttention at block 128.
+NablaBackend = Literal["flex", "cutedsl"]
 
 
 class SRConfig(BaseModel):
@@ -52,9 +55,15 @@ class SRConfig(BaseModel):
     # --- Route / backend ---
     mode: Literal["pixel", "latent"] = "pixel"
     kvae_bridge: bool = False
-    # KVAE compilation backend: "torch" (torch.compile, no extra deps) or "magi"
-    # (MagiCompiler, needs the `magi` extra).
-    vae_backend: VaeBackend = "torch"
+    # KVAE compilation backend: "split" (tiled torch.compile KVAE; the default),
+    # "torch" (per-block/leaf torch.compile), or "magi" (MagiCompiler, needs the
+    # `magi` extra). Split tiles encode and decode internally.
+    vae_backend: VaeBackend = "split"
+    # Self-attention for nabla DiTs. "cutedsl" is the default: mean-pool each
+    # 8×16 tile and run FlexAttention CuteDSL at block 128. It needs
+    # flash-attn-4. When that package is missing the factory stays on "flex",
+    # the block-64 NABLA, and dense flash paths use flash-attn 2.
+    nabla: NablaBackend = "cutedsl"
     # CUDA device the pipeline runs on ("cuda:0", "cuda:1", ...). The CLI
     # --device option overrides it, like every other setting.
     device: str = "cuda:0"
@@ -131,6 +140,7 @@ def load_sr_config_yaml(config_path: str | Path) -> SRConfig:
 
 __all__ = [
     "PATH_FIELDS",
+    "NablaBackend",
     "ResolutionScale",
     "SRConfig",
     "TargetResizeMode",

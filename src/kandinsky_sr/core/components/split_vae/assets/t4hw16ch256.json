@@ -1,0 +1,26 @@
+{
+  "checkpoint": "/workspace-SR008.fs2/dmikhaylov/src/projects_data/kandinsky_inference/k65_home/weights/kvae/kvae.safetensors",
+  "source_layer": "encoder.down.1.downsample.temporal_conv",
+  "source_weights_sha256": "f5a71849d7e0f4a3baf66f806f4b0cd5b48f284ca128fc4de51f7ae6b7790024",
+  "output": "t4hw16ch256.pt",
+  "channels": 256,
+  "seed": 42,
+  "input_shape_thw": [
+    17,
+    32,
+    32
+  ],
+  "training": {
+    "best_mse": 2.367793143775998e-07,
+    "best_step": 1199,
+    "final_mse": 2.367793143775998e-07,
+    "steps_run": 1200,
+    "threshold_reached": true
+  },
+  "validation": {
+    "mean_mse": 6.931372383405687e-06,
+    "max_mse": 6.97767154633766e-06,
+    "iterations": 1000,
+    "dtype": "torch.bfloat16"
+  }
+}
